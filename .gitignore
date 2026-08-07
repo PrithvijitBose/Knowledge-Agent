@@ -1,0 +1,21 @@
+# Environment variables (DO NOT COMMIT SECRETS)
+.env
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# Streamlit
+.streamlit/
+
+# IDE files
+.vscode/
+.idea/
