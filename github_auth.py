@@ -49,15 +49,21 @@ def exchange_code_for_token(code: str) -> Optional[str]:
         return None
 
 
+def _get_headers(access_token: Optional[str]) -> Dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "Knowledge-App",
+    }
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+    return headers
+
+
 def fetch_github_user(access_token: str) -> Optional[Dict[str, Any]]:
     """
     Fetches the authenticated user's profile details from GitHub API.
     """
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Knowledge-App",
-    }
+    headers = _get_headers(access_token)
     
     try:
         with httpx.Client(timeout=10.0) as client:
@@ -73,11 +79,7 @@ def fetch_user_repositories(access_token: str, visibility: str = "all") -> List[
     """
     Fetches the repositories accessible to the authorized user.
     """
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Knowledge-App",
-    }
+    headers = _get_headers(access_token)
     params = {
         "sort": "updated",
         "direction": "desc",
@@ -99,11 +101,7 @@ def fetch_repo_issues(access_token: str, owner: str, repo: str) -> List[Dict[str
     """
     Fetches issues for a given repository.
     """
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Knowledge-App",
-    }
+    headers = _get_headers(access_token)
     params = {"state": "all", "sort": "updated", "direction": "desc", "per_page": 30}
     
     try:
@@ -122,11 +120,7 @@ def fetch_issue_comments(access_token: str, owner: str, repo: str, issue_number:
     """
     Fetches comments for a specific repository issue.
     """
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Knowledge-App",
-    }
+    headers = _get_headers(access_token)
     
     try:
         with httpx.Client(timeout=10.0) as client:
@@ -146,11 +140,7 @@ def fetch_repo_file_content(access_token: str, owner: str, repo: str, file_path:
     Fetches and decodes base64 raw text content of a file from GitHub repository.
     """
     import base64
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Knowledge-App",
-    }
+    headers = _get_headers(access_token)
     
     try:
         with httpx.Client(timeout=10.0) as client:
@@ -188,17 +178,12 @@ def extract_referenced_files(text: str) -> List[str]:
     return unique_files
 
 
-
 def post_issue_comment(access_token: str, owner: str, repo: str, issue_number: int, comment_body: str) -> bool:
     """
     Posts a comment to a GitHub issue on behalf of the authorized user/bot.
     POST /repos/{owner}/{repo}/issues/{issue_number}/comments
     """
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Accept": "application/vnd.github.v3+json",
-        "User-Agent": "Knowledge-App",
-    }
+    headers = _get_headers(access_token)
     payload = {"body": comment_body}
     
     try:
@@ -216,5 +201,44 @@ def post_issue_comment(access_token: str, owner: str, repo: str, issue_number: i
             print(f"Response details: {e.response.text}")
         return False
 
+
+def fetch_pull_request(access_token: str, owner: str, repo: str, pr_number: int) -> Optional[Dict[str, Any]]:
+    """
+    Fetches details for a specific Pull Request from GitHub API.
+    GET /repos/{owner}/{repo}/pulls/{pull_number}
+    """
+    headers = _get_headers(access_token)
+    
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}",
+                headers=headers
+            )
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        print(f"Error fetching PR #{pr_number} for {owner}/{repo}: {e}")
+        return None
+
+
+def fetch_pull_request_files(access_token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+    """
+    Fetches list of files modified by a specific Pull Request.
+    GET /repos/{owner}/{repo}/pulls/{pull_number}/files
+    """
+    headers = _get_headers(access_token)
+    
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/files",
+                headers=headers
+            )
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        print(f"Error fetching files for PR #{pr_number} in {owner}/{repo}: {e}")
+        return []
 
 

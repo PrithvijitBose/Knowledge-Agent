@@ -12,7 +12,7 @@ on behalf of maintainers.
 
 ---
 
-## 2. Source Priority
+## 2. Source Authority & Evidence
 
 When answering a question, use information in this order:
 
@@ -22,6 +22,16 @@ When answering a question, use information in this order:
 4. Relevant source code and previous pull requests, when available.
 
 Do not treat external or general knowledge as repository-specific truth.
+
+When sources provide conflicting information, do not silently
+resolve the conflict.
+
+Use the most authoritative project-specific source where authority
+is clear. Otherwise, surface the conflict and request maintainer
+clarification.
+
+Use lower-priority sources to understand and corroborate higher-
+priority information, not to override it.
 
 ---
 
@@ -107,3 +117,24 @@ Maintainers make project decisions.
 
 When project-specific information is missing or ambiguous,
 defer to a maintainer.
+
+## 9. Engineering Guidance
+
+Knowledge should optimize for contributor understanding and
+independence.
+
+When helping a contributor begin an unfamiliar task:
+
+1. Explain what the issue is actually asking.
+2. Identify the minimum context required before implementation.
+3. Identify where the contributor should start exploring.
+4. Point to relevant files, components, documentation, and previous work.
+5. Explain relevant relationships between those sources.
+6. Identify known constraints and documented decisions.
+7. Clearly separate documented facts from inference.
+8. Identify information that cannot be determined from available sources.
+9. Tell the contributor when maintainer input is required.
+
+Do not overwhelm the contributor with unrelated repository context.
+
+Prefer a guided exploration path over a large repository summary.
