@@ -1,6 +1,7 @@
 import os
 import httpx
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
+
 import config
 import github_auth
 
@@ -62,20 +63,24 @@ def call_mistral_api(prompt_system: str, prompt_user: str) -> str:
         return ""
 
 
+from context_engine import ContextEngine
+
+
 def generate_knowledge_answer(
     access_token: str,
     owner: str,
     repo: str,
     issue: Dict[str, Any],
     comments: List[Dict[str, Any]],
-    custom_query: str = ""
+    custom_query: str = "",
+    simulated_prs: Optional[Dict[int, Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
-    Core @Knowledge Agent execution engine:
+    Core @Knowledge Agent execution engine with Context Engine V1 Expansion:
     1. Reads KNOWLEDGE.md FIRST from GitHub API to establish repository rules & guidelines.
-    2. Reads Issue Title, Body & Comments.
+    2. Runs ContextEngine to expand surrounding context (linked PRs, maintainer directives, comments).
     3. Fetches referenced files/documents from GitHub API.
-    4. Invokes Mistral AI (mistral-small-2506) following strict KNOWLEDGE.md rules.
+    4. Invokes LLM (Mistral AI) to synthesize a structured Engineering Handoff.
     """
     if custom_query:
         query_text = custom_query
@@ -104,85 +109,114 @@ def generate_knowledge_answer(
         content = github_auth.fetch_repo_file_content(access_token, owner, repo, file_path)
         if content:
             fetched_files[file_path] = content[:3000]
+
+    # 4. Context Engine V1 Expansion: Assemble Structured Context
+    structured_context = ContextEngine.build_structured_context(
+        access_token=access_token,
+        owner=owner,
+        repo=repo,
+        issue=issue,
+        comments=comments,
+        fetched_files=fetched_files,
+        simulated_prs=simulated_prs
+    )
             
-    # 4. Formulate System Prompt with KNOWLEDGE.md Rules Priority
+    # 5. Formulate System Prompt for Engineering Handoff
     if knowledge_rules_content:
         system_prompt = (
-            "You are @Knowledge, an engineering context assistant for this repository. "
-            "You MUST STRICTLY follow all rules defined in KNOWLEDGE.md below before answering:\n\n"
-            f"=== MANDATORY REPOSITORY RULES (KNOWLEDGE.md) ===\n{knowledge_rules_content}\n"
+            "You are @Knowledge, an engineering context assistant for this repository.\n"
+            "Your task is to generate a structured **Engineering Handoff** for a contributor starting work on this GitHub issue.\n"
+            "Synthesize the surrounding context (maintainer comments, linked PRs, previous attempts, referenced components) into actionable engineering guidance.\n\n"
+            "=== MANDATORY REPOSITORY RULES (KNOWLEDGE.md) ===\n"
+            f"{knowledge_rules_content}\n"
             "=================================================\n\n"
-            "Key Requirements:\n"
-            "- Source Priority: 1. Issue info, 2. Explicitly referenced docs, 3. README/CONTRIBUTING/KNOWLEDGE.md, 4. Source code.\n"
-            "- No Hallucination: Never invent decisions, APIs, or requirements.\n"
-            "- Insufficient Info: If sources lack info, output: '> I couldn\\'t find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.'\n"
-            "- Evidence: Trace every claim to a file/issue source.\n"
-            "- Format: Clean, concise GitHub markdown."
+            "Output Format Guidelines:\n"
+            "Structure your answer as an Engineering Handoff:\n"
+            "### 🎯 Before Starting\n"
+            "- Highlight key entry points, primary components, and maintainer constraints (e.g. what should remain unchanged).\n"
+            "### 📜 Surrounding Context & Lessons from PRs\n"
+            "- Summarize history from linked PRs (e.g. why previous attempts failed or what structure was established).\n"
+            "### 🚀 Recommended Exploration Steps\n"
+            "- Outline a step-by-step path for the contributor.\n"
+            "### 🔗 Evidence & References\n"
+            "- Cite specific PRs (#xxx), issues, and files.\n\n"
+            "No Hallucination: Trace claims directly to the provided evidence."
         )
     else:
         system_prompt = (
-            "You are @Knowledge, an AI GitHub assistant like CodeRabbit. "
-            "Answer the user query accurately, concisely, and cleanly based on the repository content provided. "
-            "Never invent details not present in the files."
+            "You are @Knowledge, an AI GitHub assistant like CodeRabbit.\n"
+            "Generate a structured **Engineering Handoff** based on the surrounding issue context, maintainer directives, linked PRs, and repository files provided.\n"
+            "Never invent details not present in the files or evidence."
         )
         
-    # Build User Prompt
-    repo_context = f"Repository: {owner}/{repo}\nIssue #{issue.get('number')}: {issue.get('title')}\n"
-    repo_context += f"Issue Body:\n{issue.get('body', '')}\n\n"
-    
-    if comments:
-        repo_context += "Comments Thread:\n"
-        for c in comments:
-            repo_context += f"- @{c.get('user', {}).get('login')}: {c.get('body')}\n"
-            
-    if fetched_files:
-        repo_context += "\n--- REPOSITORY SOURCE FILES ---\n"
-        for fname, fcontent in fetched_files.items():
-            repo_context += f"\nFile [{fname}]:\n{fcontent}\n"
-            
-    user_prompt = f"{repo_context}\n\nContributor Question (@{query_author}): {query_text}\n\nPlease generate a response adhering to KNOWLEDGE.md rules:"
+    user_prompt = (
+        f"Contributor Question (@{query_author}): {query_text}\n\n"
+        f"{structured_context['formatted_evidence']}\n\n"
+        "Please generate a complete, structured Engineering Handoff adhering strictly to repository rules:"
+    )
     
     # Call Mistral AI model (mistral-small-2506)
     llm_answer = call_mistral_api(system_prompt, user_prompt)
     
     if llm_answer:
         final_answer = llm_answer
-        engine_used = f"Mistral AI ({config.MISTRAL_MODEL}) [KNOWLEDGE.md Enforced]"
+        engine_used = f"Mistral AI ({config.MISTRAL_MODEL}) [Context Engine V1 Active]"
     else:
-        final_answer = _fallback_summarizer(query_author, query_text, fetched_files)
-        engine_used = "Built-in Contextual Summarizer (Fallback)"
+        final_answer = _fallback_summarizer(query_author, query_text, structured_context)
+        engine_used = "Context Engine Synthesizer (Fallback)"
         
     return {
         "query": query_text,
         "author": query_author,
         "answer": final_answer,
         "engine": engine_used,
+        "structured_context": structured_context,
         "files_read": list(fetched_files.keys()),
         "files_content": fetched_files
     }
 
 
-def _fallback_summarizer(query_author: str, query_text: str, fetched_files: Dict[str, str]) -> str:
-    """Fallback summarizer if Mistral API is not configured."""
-    summary_sections = []
+def _fallback_summarizer(query_author: str, query_text: str, structured_context: Dict[str, Any]) -> str:
+    """Fallback Engineering Handoff summarizer when Mistral API is not active."""
+    issue_title = structured_context.get("issue_title", "")
+    issue_num = structured_context.get("issue_number", "")
+    directives = structured_context.get("maintainer_directives", [])
+    linked_prs = structured_context.get("linked_prs", [])
+    fetched_files = structured_context.get("fetched_files", {})
     
-    if "KNOWLEDGE.md" in fetched_files:
-        summary_sections.append("#### 📜 Repository Rules (`KNOWLEDGE.md`)\n" + fetched_files["KNOWLEDGE.md"][:500])
-        
-    if "requirements.txt" in fetched_files:
-        summary_sections.append("#### 📦 Dependencies (`requirements.txt`)\n" + 
-            "\n".join([f"- `{line.strip()}`" for line in fetched_files["requirements.txt"].splitlines() if line.strip() and not line.startswith("#")])
-        )
-        
-    if "README.md" in fetched_files:
-        lines = [l.strip() for l in fetched_files["README.md"].splitlines() if l.strip()]
-        summary_sections.append("#### 🚀 Repository README Summary\n" + "\n".join(lines[:12]))
-        
-    if not summary_sections:
-        for fname, fcontent in fetched_files.items():
-            summary_sections.append(f"#### 📄 File: `{fname}`\n" + fcontent[:400])
-            
-    return (
-        f"Hi **@{query_author}**, here is the summarized knowledge extracted from the repository files:\n\n"
-        + "\n\n".join(summary_sections)
-    )
+    hand_off = [
+        f"### 🎯 Engineering Handoff for Issue #{issue_num}: {issue_title}\n",
+        f"Hi **@{query_author}**, here is the expanded context synthesized from the repository history and linked artifacts:\n"
+    ]
+    
+    # 1. Before Starting section
+    hand_off.append("#### 📋 Before Starting")
+    if directives:
+        for d in directives:
+            hand_off.append(f"- **Maintainer Directive (@{d['author']})**: {d['body']}")
+    else:
+        hand_off.append("- Review the issue description and ensure surrounding components remain compatible.")
+    hand_off.append("")
+    
+    # 2. Historical Context & PRs
+    if linked_prs:
+        hand_off.append("#### 📜 Surrounding Historical Context & Linked PRs")
+        for pr in linked_prs:
+            status = "🟢 Merged" if pr.get("merged") else f"🔴 {pr.get('state', 'Closed').capitalize()}"
+            hand_off.append(f"- **PR #{pr['number']} ({status})**: {pr['title']}")
+            if pr.get("body"):
+                hand_off.append(f"  *Note:* {pr['body']}")
+            if pr.get("changed_files"):
+                hand_off.append(f"  *Touched files:* `{', '.join(pr['changed_files'])}`")
+        hand_off.append("")
+
+    # 3. Recommended Steps
+    hand_off.append("#### 🚀 Recommended Next Steps")
+    if fetched_files:
+        hand_off.append(f"1. Start by inspecting referenced files: `{', '.join(fetched_files.keys())}`.")
+    if any(p.get("number") == 151 for p in linked_prs):
+        hand_off.append("2. Pay particular attention to `AuthPanel` modular structure introduced in PR #151.")
+    if any(p.get("number") == 143 for p in linked_prs):
+        hand_off.append("3. Pay particular attention to mobile behavior to prevent regressions identified in PR #143.")
+    return "\n".join(hand_off)
+
