@@ -77,6 +77,7 @@ class TestContextEngine(unittest.TestCase):
 
         self.assertIn("answer", result)
         self.assertIn("structured_context", result)
+        answer = result.get("answer", "")
         self.assertTrue(
             "Engineering Handoff" in answer or "Before Starting" in answer or "Overview" in answer or "Constraints" in answer
         )

@@ -242,3 +242,78 @@ def fetch_pull_request_files(access_token: str, owner: str, repo: str, pr_number
         return []
 
 
+def fetch_issue(access_token: str, owner: str, repo: str, issue_number: int) -> Optional[Dict[str, Any]]:
+    """
+    Fetches details for a specific single Issue from GitHub API.
+    GET /repos/{owner}/{repo}/issues/{issue_number}
+    """
+    headers = _get_headers(access_token)
+    
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}",
+                headers=headers
+            )
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        print(f"Error fetching issue #{issue_number} for {owner}/{repo}: {e}")
+        return None
+
+# Alias for fetch_issue
+fetch_issues = fetch_issue
+
+# Alias for fetch_pull_request
+fetch_pull_requests = fetch_pull_request
+
+
+def fetch_pr_comments(access_token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+    """
+    Fetches all comments for a specific Pull Request from GitHub API.
+    Combines both general issue comments and inline code review comments.
+    """
+    headers = _get_headers(access_token)
+    comments = []
+    
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            # 1. Issue conversation comments
+            res_issue = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{pr_number}/comments", headers=headers)
+            if res_issue.status_code == 200:
+                comments.extend(res_issue.json())
+                
+            # 2. PR review comments (code diff inline comments)
+            res_pr = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments", headers=headers)
+            if res_pr.status_code == 200:
+                comments.extend(res_pr.json())
+    except Exception as e:
+        print(f"Error fetching PR comments for PR #{pr_number} in {owner}/{repo}: {e}")
+        
+    return comments
+
+
+def extract_referenced_prs(text: str) -> List[int]:
+    """
+    Scans text for referenced PR numbers (e.g. #143, pull/151, PR #160).
+    """
+    import re
+    if not text:
+        return []
+    patterns = [
+        r'(?:PR|pr|Pull Request|pull|fixes|closes|refs)?\s*#(\d+)',
+        r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
+        r'pull\/(\d+)'
+    ]
+    found_numbers = set()
+    for pat in patterns:
+        matches = re.findall(pat, text, re.IGNORECASE)
+        for m in matches:
+            try:
+                found_numbers.add(int(m))
+            except ValueError:
+                pass
+    return sorted(list(found_numbers))
+
+
+
