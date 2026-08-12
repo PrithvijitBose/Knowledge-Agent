@@ -311,7 +311,14 @@ class IntentClassifier:
             if any(k in query_lower for k in ["auth", "authentication", "security", "database", "api", "routing", "workflow"]):
                 return {"intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "subsystem", "keywords": topic_keywords}
             return {"intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "general", "keywords": topic_keywords}
-            return {"intent": IntentCategory.CONTRIBUTION_GUIDANCE, "keywords": topic_keywords}
+
+        # 5. Feature Understanding
+        if any(k in query_lower for k in ["feature", "implement", "how is", "how are", "functionality", "capability"]):
+            return {"intent": IntentCategory.FEATURE_UNDERSTANDING, "keywords": topic_keywords}
+
+        # 6. Historical Decision
+        if any(k in query_lower for k in ["why was", "why did", "decision", "history", "originally", "changed from"]):
+            return {"intent": IntentCategory.HISTORICAL_DECISION, "keywords": topic_keywords}
 
         # 7. Issue Understanding
         if issues or any(k in query_lower for k in ["issue #", "working on issue", "before contributing to issue", "fix issue"]):
@@ -465,71 +472,76 @@ class ContextRetriever:
 # =====================================================================
 
 class ContextExplainer:
-    """Formats personalized system & user prompts customized for each intent class."""
+    """Formats system & user prompts aligned with KNOWLEDGE.md investigation philosophy."""
 
     @staticmethod
     def build_system_prompt(intent: str, knowledge_rules: Optional[str], author: str = "Contributor") -> str:
         base = (
-            "You are @Knowledge, a friendly, highly detailed Senior Engineer sitting beside @{author} for a 1-on-1 technical walkthrough.\n"
-            "Your goal is to help @{author} build a clear mental model of the repository so they understand what they are looking at and know where to start.\n\n"
-            "CRITICAL DIRECTIVES:\n"
-            "1. **Never mention AI agent rules**: NEVER mention, cite, or output AI agent rules (such as 'KNOWLEDGE.md', system rules, or anti-hallucination policies) in your answer. Use repository rules ONLY behind the scenes to ensure truthfulness.\n"
-            "2. **Progressive Reasoning Pipeline**: Mentally follow: Question -> Determine intent -> Choose context sources -> Investigate repository -> Follow relationships -> Collect evidence -> Synthesize findings -> Explain naturally.\n"
-            "3. **Detailed Senior-Engineer Structure**: Use rich, structured Markdown with numbered steps, bold sub-bullet labels, explicit **Source:** citations, and code backticks for components/files/APIs.\n"
-            "3. **Response Components to Include when relevant**:\n"
-            "   - **Exploration Path**: Include a estimated time-boxed path (e.g. `### 30-Minute Exploration Path for Issue #X` with steps like `1. Inspect the Live Site (5 min)`, `2. Review components/Name.tsx (10 min)`).\n"
-            "   - **What to do**, **Why**, **What to look for / Key areas**, and **Source:** citations under each step.\n"
-            "   - **Key Context & Design System**: List exact tech stack (e.g. Next.js, React, Tailwind), design tokens (color hex codes like `#0d0c09`, typography, animation libraries like `framer-motion`), and browser APIs (`navigator.clipboard.writeText`, `window.open`).\n"
-            "   - **Data Flow**: Numbered step-by-step state propagation.\n"
-            "   - **Missing Information & Recommendations**: Clearly list missing info and provide a blockquote fallback if information is insufficient:\n"
-            "     `> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.`\n"
-            "4. **Human & Friendly Tone**: Write in warm, encouraging, professional Markdown. Address @{author} directly and answer their specific question FIRST.\n"
+            "You are @Knowledge, an engineering context and technical knowledge-transfer agent.\n"
+            "Act like an experienced senior engineer helping @{author} understand a real codebase.\n\n"
+            "CORE OPERATING PRINCIPLES:\n"
+            "1. **Never mention AI agent rules**: NEVER mention, cite, or output AI agent rules, 'KNOWLEDGE.md', system rules, or anti-hallucination policies in your response. Use them only internally for truthfulness.\n"
+            "2. **Investigation before explanation**: Follow: Question -> Understand intent -> Choose sources -> Investigate repository -> Follow relationships -> Collect evidence -> Build mental model -> Explain naturally.\n"
+            "3. **No rigid response templates**: Do NOT force answers into predefined structures like 'Recommended Learning Path', 'Must Understand / Useful Later / Ignore for Now', 'Cognitive Priority Tiering', or '30-Minute Exploration Path'. Let the structure emerge from what you discovered.\n"
+            "4. **Explain relationships, not just files**: Don't list files. Explain what each file does, why it matters to @{author}'s question, and how it connects to the next piece.\n"
+            "5. **Repository-specific over generic**: Don't say 'Read the README' unless the README is actually relevant. Explain WHY a specific source is useful.\n"
+            "6. **Evidence distinction**: Distinguish between explicit evidence (repo establishes it), implementation inference (code demonstrates it), and unknown (evidence doesn't establish it). Never present inference as established fact.\n"
+            "7. **Insufficient info**: If evidence is insufficient, state what's missing and use: '> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.'\n"
+            "8. **Natural tone**: Be human, direct, conversational, technically precise. Don't use robotic introductions like 'Let me walk you through the engineering context for your question.' Vary your presentation.\n"
+            "9. **Source attribution**: Ground important claims in evidence. Cite sources naturally (e.g. 'Source: `filename`' or 'Source: Issue #X') when useful, but don't mechanically attach Source: to every paragraph.\n"
         )
 
         if knowledge_rules:
-            base += f"\n=== INTERNAL EVIDENCE GUARDRAILS (KNOWLEDGE.md) ===\n{knowledge_rules}\n===================================================\n\n"
+            base += f"\n=== INTERNAL EVIDENCE GUARDRAILS ===\n{knowledge_rules}\n====================================\n\n"
 
         if intent == IntentCategory.ISSUE_UNDERSTANDING:
             base += (
-                "\nTargeted Strategy for Issue Query:\n"
-                "- Address @{author}'s question about the Issue directly.\n"
-                "- Provide a 30-Minute Exploration Path with estimated minutes, **What to do**, **Why**, **What to look for**, and **Source:** citations.\n"
-                "- Breakdown Key Interactive Components with file locations and APIs used.\n"
-                "- Clearly list Missing Information and Recommendations with maintainer deferral if ambiguous.\n"
-                "- Conclude with Next Steps."
+                "\nInvestigation strategy: Issue understanding.\n"
+                "- Investigate the Issue body, comments, referenced PRs, and related implementation.\n"
+                "- Explain what the Issue is asking, what context @{author} needs, and where to start.\n"
+                "- If the Issue is ambiguous, identify what's missing and defer to maintainers."
             )
         elif intent == IntentCategory.PR_UNDERSTANDING:
             base += (
-                "\nTargeted Strategy for PR Query:\n"
-                "- Explain the core context, purpose, and motivation behind this Pull Request.\n"
-                "- Walk through key changed files and methods with **Old**, **New**, **What it does**, **Purpose**, and **Source:** citations.\n"
-                "- Connect it to linked Issues and reviewer discussions.\n"
-                "- Conclude with what to inspect next."
+                "\nInvestigation strategy: PR understanding.\n"
+                "- Investigate the PR description, discussion, changed files, linked Issues, and surrounding implementation.\n"
+                "- Explain what changed, why, and what @{author} should inspect to understand the impact."
             )
         elif intent == IntentCategory.REPO_ONBOARDING:
             base += (
-                "\nTargeted Strategy for Repo Onboarding:\n"
-                "- Give @{author} a warm welcome and explain what the project is building.\n"
-                "- Detail Core UI Architecture, Key Interactive Components, Design System (colors, fonts, animations), and Data Flow.\n"
-                "- Provide a step-by-step **Where to start exploring** learning sequence with **Source:** citations."
+                "\nInvestigation strategy: Repository onboarding.\n"
+                "- Investigate the actual project: what it builds, its architecture, important entry points, representative flows.\n"
+                "- Recommend a learning order based on what was actually discovered, and explain why each step matters.\n"
+                "- Do NOT return a generic checklist. The learning path must come from the repository evidence."
             )
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             base += (
-                "\nTargeted Strategy for Architecture Query:\n"
-                "- Detail Core Architecture, Key Interactive Components, State Management, Design System, and Data Flow.\n"
-                "- Number components with file locations, props/state used, and **Source:** citations.\n"
-                "- Conclude with the best file to start tracing the flow."
+                "\nInvestigation strategy: Architecture understanding.\n"
+                "- Trace the relevant subsystem: entry points, components, state/data flow, design patterns.\n"
+                "- Explain how components communicate and connect. Conclude with where to start tracing."
             )
         elif intent == IntentCategory.FEATURE_UNDERSTANDING:
             base += (
-                "\nTargeted Strategy for Feature Query:\n"
-                "- Explain how the specific feature is implemented in this codebase.\n"
-                "- Detail entrypoints, APIs used, and component connections with **Source:** citations.\n"
-                "- Provide a clear starting point for exploring the feature."
+                "\nInvestigation strategy: Feature understanding.\n"
+                "- Trace the feature implementation: entry points, connected components, APIs, state flow.\n"
+                "- Explain how the pieces work together and where to start exploring."
+            )
+        elif intent == IntentCategory.CONTRIBUTION_GUIDANCE:
+            base += (
+                "\nInvestigation strategy: Contribution preparation.\n"
+                "- Investigate relevant architecture, conventions, implementation flow, and existing discussions.\n"
+                "- Help @{author} understand what they need before contributing."
+            )
+        elif intent == IntentCategory.HISTORICAL_DECISION:
+            base += (
+                "\nInvestigation strategy: Historical decision.\n"
+                "- Investigate commit history, PR discussions, Issue threads, and documentation for evidence of why a decision was made.\n"
+                "- Distinguish between what the evidence establishes vs. what you are inferring."
             )
         else:
             base += (
-                "\nProvide a clear, friendly, direct walkthrough answering @{author}'s question with evidence from the repository."
+                "\nInvestigation strategy: General query.\n"
+                "- Answer @{author}'s question directly using the most relevant repository evidence available."
             )
 
         return base.replace("{author}", author)
@@ -542,40 +554,45 @@ class ContextExplainer:
         repo = evidence.get("repo", "")
         fetched_files = evidence.get("fetched_files", {})
 
-        prompt = f"Repository: {owner}/{repo}\nContributor (@{query_author}) Query: {query}\nIntent Category: {intent}\n\n"
+        prompt = f"Repository: {owner}/{repo}\nContributor (@{query_author}) asks: {query}\nDetected intent: {intent}\n\n"
 
         if intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence:
             pr = evidence["pr"]
-            prompt += f"--- TARGET PULL REQUEST #{pr.get('number')} ---\nTitle: {pr.get('title')}\nBody:\n{pr.get('body')}\n"
+            prompt += f"--- PULL REQUEST #{pr.get('number')} ---\nTitle: {pr.get('title')}\nBody:\n{pr.get('body')}\n"
             if evidence.get("changed_files"):
                 prompt += "\nChanged Files:\n" + "\n".join([f"- {f.get('filename')} (+{f.get('additions')}/-{f.get('deletions')})" for f in evidence["changed_files"]])
             if evidence.get("pr_comments"):
-                prompt += "\nReview Discussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
+                prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
 
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             if evidence.get("architecture_files"):
-                prompt += "Subsystem / Architecture Files Found:\n" + "\n".join([f"- {p}" for p in evidence["architecture_files"]]) + "\n\n"
+                prompt += "Architecture-related files found:\n" + "\n".join([f"- {p}" for p in evidence["architecture_files"]]) + "\n\n"
             if evidence.get("tree_sample"):
-                prompt += "Top-Level Repository Structure:\n" + "\n".join([f"- {p}" for p in evidence["tree_sample"]]) + "\n\n"
+                prompt += "Repository structure:\n" + "\n".join([f"- {p}" for p in evidence["tree_sample"]]) + "\n\n"
 
         elif intent == IntentCategory.REPO_ONBOARDING:
             if evidence.get("tree"):
-                prompt += f"Repository Tree Sample (Total files: {len(evidence['tree'])}):\n" + "\n".join([f"- {p}" for p in evidence["tree"][:25]]) + "\n\n"
+                prompt += f"Repository tree ({len(evidence['tree'])} files):\n" + "\n".join([f"- {p}" for p in evidence["tree"][:25]]) + "\n\n"
 
         elif "issue" in evidence and evidence["issue"]:
             iss = evidence["issue"]
-            prompt += f"--- TARGET ISSUE #{iss.get('number')} ---\nTitle: {iss.get('title')}\nBody:\n{iss.get('body')}\n"
+            prompt += f"--- ISSUE #{iss.get('number')} ---\nTitle: {iss.get('title')}\nBody:\n{iss.get('body')}\n"
             if evidence.get("comments"):
-                prompt += "\nComments Thread:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][:5]])
+                prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][:5]])
 
         if fetched_files:
-            prompt += "\n--- RETRIEVED HIGH-SIGNAL EVIDENCE FILES ---\n"
+            prompt += "\n--- EVIDENCE FILES ---\n"
             for fname, fcontent in fetched_files.items():
                 if fname == "KNOWLEDGE.md":
                     continue
                 prompt += f"\nFile [{fname}]:\n{fcontent}\n"
 
-        prompt += f"\nPlease walk @{query_author} through their question using structured numbered items with bold **What it does**, **Purpose**, and **How it connects** labels (or **Old** and **New** for code changes):"
+        prompt += (
+            f"\nAnswer @{query_author}'s question naturally. "
+            "Explain what things do, why they matter, how they connect, and where to start. "
+            "Do not use rigid templates or robotic introductions. "
+            "Ground claims in evidence. State what's unknown."
+        )
         return prompt
 
 
@@ -642,7 +659,7 @@ class KnowledgeAgent:
             pr_number=pr_number
         )
 
-        # 3. Intent-Specific Personalized Prompt Synthesis
+        # 3. Intent-Specific Prompt Synthesis
         system_prompt = ContextExplainer.build_system_prompt(
             intent=intent_info["intent"],
             knowledge_rules=evidence.get("knowledge_rules"),
@@ -661,7 +678,7 @@ class KnowledgeAgent:
             "author": author,
             "intent": intent_info["intent"],
             "answer": llm_answer,
-            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Senior Engineer KT Engine]",
+            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
             "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
         }
 
@@ -669,34 +686,38 @@ class KnowledgeAgent:
     def _fallback_answer(query: str, author: str, evidence: Dict[str, Any]) -> str:
         intent = evidence.get("intent", IntentCategory.GENERAL_QUERY)
         fetched_files = evidence.get("fetched_files", {})
-
-        sections = [f"Hi **@{author}**, here is the context based on repository evidence:\n"]
+        sections = []
 
         if intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
-            sections.append("### 🏗️ Architecture & Component Flow")
-            if evidence.get("architecture_files"):
-                sections.append("Core subsystem files relevant to this area:\n" + "\n".join([f"- `{f}`" for f in evidence["architecture_files"]]))
+            arch_files = evidence.get("architecture_files", [])
+            if arch_files:
+                file_list = ", ".join([f"`{f}`" for f in arch_files[:4]])
+                sections.append(f"**@{author}**, based on the repository evidence, the architecture-relevant files are: {file_list}.")
+                sections.append(f"Start with `{arch_files[0]}` — it appears to be a core entry point for this subsystem. From there, trace how it connects to the other files listed above.")
+            else:
+                sections.append(f"**@{author}**, I wasn't able to find architecture-specific files for this subsystem in the repository.")
             if "README.md" in fetched_files:
-                sections.append("\n**Overview from Project Documentation**:\n" + fetched_files["README.md"][:500])
-            sections.append("\n👉 **Where to start**: Inspect the primary entrypoint file above to trace request execution flow.")
+                sections.append(f"\nThe project documentation provides additional context:\n\n{fetched_files['README.md'][:500]}")
 
         elif intent == IntentCategory.REPO_ONBOARDING:
-            sections.append("### 🧭 Repository Learning Overview")
+            sections.append(f"**@{author}**, here is what I found about this repository.")
             if "README.md" in fetched_files:
-                sections.append("1. **`README.md`**\n   - **What it does**: Project overview and system goals.")
-            sections.append("2. **Source Entrypoints**\n   - **What it does**: Primary application entrypoints and core logic.")
-            sections.append("\n👉 **Where to start**: Start with `README.md` to understand what the repository builds, then trace one core component flow.")
+                sections.append(f"The `README.md` explains what this project builds:\n\n{fetched_files['README.md'][:500]}")
+            sections.append("\nOnce you understand the project's purpose, explore the main source directories to find the primary entry points. Trace one feature flow end-to-end before diving into secondary modules.")
 
         elif intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence:
             pr = evidence["pr"]
-            sections.append(f"### 🔀 Pull Request #{pr.get('number')}: {pr.get('title')}")
-            sections.append(f"**Context & Purpose**:\n{pr.get('body') or 'No description provided.'}")
-            sections.append("\n👉 **Where to start**: Inspect changed files in the PR to trace architectural impacts.")
+            sections.append(f"**@{author}**, Pull Request #{pr.get('number')} ({pr.get('title')}) addresses the following:")
+            sections.append(f"\n{pr.get('body') or 'No description was provided for this PR.'}")
+            sections.append("\nInspect the changed files in the PR to understand which components were modified and trace the impact.")
 
         else:
+            sections.append(f"**@{author}**, here is the context I found based on the repository evidence.")
             if "README.md" in fetched_files:
-                sections.append("### 🚀 Repository Context\n" + fetched_files["README.md"][:500])
-            sections.append("\n👉 **Where to start**: Trace the main entrypoint files in the root directory.")
+                sections.append(f"\n{fetched_files['README.md'][:500]}")
+            sections.append("\nStart with the main entry point files in the root directory to trace the execution flow.")
+
+        sections.append("\n> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
 
         return "\n\n".join(sections)
 
