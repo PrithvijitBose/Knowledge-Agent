@@ -1,8 +1,9 @@
 import unittest
 from unittest.mock import patch
 import knowledge_engine
+from knowledge_engine import IntentCategory
 
-class TestKnowledgeEngine(unittest.TestCase):
+class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
 
     def test_relationship_extractor_prs(self):
         text = "Check out PR #82 and PR #101. Also see github.com/owner/repo/pull/105."
@@ -14,26 +15,57 @@ class TestKnowledgeEngine(unittest.TestCase):
         issues = knowledge_engine.RelationshipExtractor.extract_referenced_issues(text)
         self.assertEqual(issues, [43, 45, 50])
 
-    def test_entry_point_classifier(self):
-        self.assertEqual(knowledge_engine.EntryPointClassifier.classify("Why does PR #82 look like this?"), "PR")
-        self.assertEqual(knowledge_engine.EntryPointClassifier.classify("I have never worked on this repository. How should I learn this codebase?"), "REPO_ONBOARDING")
-        self.assertEqual(knowledge_engine.EntryPointClassifier.classify("I need to work on Issue #43. What should I understand first?"), "ISSUE")
+    def test_intent_classifier_categories(self):
+        # 1. PR Understanding
+        res_pr = knowledge_engine.IntentClassifier.classify("@Knowledge Why does PR #82 exist?")
+        self.assertEqual(res_pr["intent"], IntentCategory.PR_UNDERSTANDING)
+        self.assertEqual(res_pr["pr_numbers"], [82])
 
-    def test_repo_onboarding_context_building(self):
-        ctx = knowledge_engine.EngineeringContextGraph.build_repo_onboarding_context("", "owner", "repo")
-        self.assertEqual(ctx["type"], "REPO_ONBOARDING")
+        # 2. Repo Onboarding
+        res_onboard = knowledge_engine.IntentClassifier.classify("@Knowledge I just joined this repository. What should I learn first?")
+        self.assertEqual(res_onboard["intent"], IntentCategory.REPO_ONBOARDING)
+
+        # 3. Architecture Understanding
+        res_arch = knowledge_engine.IntentClassifier.classify("@Knowledge How does authentication work in this repository?")
+        self.assertEqual(res_arch["intent"], IntentCategory.ARCHITECTURE_UNDERSTANDING)
+        self.assertIn("auth", res_arch["keywords"])
+
+        # 4. Contribution Guidance
+        res_contrib = knowledge_engine.IntentClassifier.classify("@Knowledge How do I run tests and setup dev environment?")
+        self.assertEqual(res_contrib["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+
+        # 5. Issue Understanding
+        res_issue = knowledge_engine.IntentClassifier.classify("@Knowledge What do I need to know before contributing to Issue #43?")
+        self.assertEqual(res_issue["intent"], IntentCategory.ISSUE_UNDERSTANDING)
+        self.assertEqual(res_issue["issue_numbers"], [43])
 
     @patch("knowledge_engine.is_mistral_configured", return_value=False)
-    def test_knowledge_agent_fallback(self, mock_mistral):
+    def test_architecture_fallback_response(self, mock_mistral):
         res = knowledge_engine.KnowledgeAgent.generate_answer(
             token="",
             owner="demo",
             repo="demo-repo",
-            query="I have never worked on this repository. How should I learn this codebase?"
+            query="@Knowledge How does authentication work in this repository?",
+            author="DeveloperJane"
         )
-        self.assertIn("answer", res)
+        self.assertEqual(res["intent"], IntentCategory.ARCHITECTURE_UNDERSTANDING)
+        self.assertEqual(res["author"], "DeveloperJane")
+        self.assertIn("DeveloperJane", res["answer"])
+        self.assertIn("Subsystem Architecture Overview", res["answer"])
+
+    @patch("knowledge_engine.is_mistral_configured", return_value=False)
+    def test_repo_onboarding_fallback_response(self, mock_mistral):
+        res = knowledge_engine.KnowledgeAgent.generate_answer(
+            token="",
+            owner="demo",
+            repo="demo-repo",
+            query="@Knowledge I just joined. What should I learn first?",
+            author="NewContributor"
+        )
+        self.assertEqual(res["intent"], IntentCategory.REPO_ONBOARDING)
+        self.assertEqual(res["author"], "NewContributor")
+        self.assertIn("NewContributor", res["answer"])
         self.assertIn("Cognitive Priority Tiering", res["answer"])
-        self.assertEqual(res["type"], "REPO_ONBOARDING")
 
 
 if __name__ == "__main__":
