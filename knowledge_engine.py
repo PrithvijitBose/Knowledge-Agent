@@ -670,33 +670,33 @@ class KnowledgeAgent:
         intent = evidence.get("intent", IntentCategory.GENERAL_QUERY)
         fetched_files = evidence.get("fetched_files", {})
 
-        sections = [f"Hi **@{author}**! Let me walk you through the engineering context for your question:\n\n> *\"{query}\"*\n"]
+        sections = [f"Hi **@{author}**, here is the context based on repository evidence:\n"]
 
         if intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             sections.append("### 🏗️ Architecture & Component Flow")
             if evidence.get("architecture_files"):
-                sections.append("Here are the core subsystem files relevant to this area:\n" + "\n".join([f"- `{f}`" for f in evidence["architecture_files"]]))
+                sections.append("Core subsystem files relevant to this area:\n" + "\n".join([f"- `{f}`" for f in evidence["architecture_files"]]))
             if "README.md" in fetched_files:
                 sections.append("\n**Overview from Project Documentation**:\n" + fetched_files["README.md"][:500])
-            sections.append("\n👉 **Where to start**: Start by inspecting the entrypoint file in the architecture list above to trace how requests flow through the module.")
+            sections.append("\n👉 **Where to start**: Inspect the primary entrypoint file above to trace request execution flow.")
 
         elif intent == IntentCategory.REPO_ONBOARDING:
-            sections.append("### 🧭 Recommended Learning Path")
-            sections.append("1. **Project Goal**: Read `README.md` to understand what this repository builds.")
-            sections.append("2. **Core Structure**: Explore main source directories to see how entrypoints connect to components.")
-            sections.append("3. **Developer Setup**: Read `CONTRIBUTING.md` or dependency manifests for build/test steps.")
-            sections.append("\n👉 **Where to start**: Start with `README.md`, then trace one primary feature flow before diving into deeper modules.")
+            sections.append("### 🧭 Repository Learning Overview")
+            if "README.md" in fetched_files:
+                sections.append("1. **`README.md`**\n   - **What it does**: Project overview and system goals.")
+            sections.append("2. **Source Entrypoints**\n   - **What it does**: Primary application entrypoints and core logic.")
+            sections.append("\n👉 **Where to start**: Start with `README.md` to understand what the repository builds, then trace one core component flow.")
 
         elif intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence:
             pr = evidence["pr"]
             sections.append(f"### 🔀 Pull Request #{pr.get('number')}: {pr.get('title')}")
             sections.append(f"**Context & Purpose**:\n{pr.get('body') or 'No description provided.'}")
-            sections.append("\n👉 **Where to start**: Inspect the changed files list in the PR to see which components were modified.")
+            sections.append("\n👉 **Where to start**: Inspect changed files in the PR to trace architectural impacts.")
 
         else:
             if "README.md" in fetched_files:
-                sections.append("### 🚀 Repository Overview\n" + fetched_files["README.md"][:500])
-            sections.append("\n👉 **Where to start**: Check the main entrypoint files in the root directory to trace execution flow.")
+                sections.append("### 🚀 Repository Context\n" + fetched_files["README.md"][:500])
+            sections.append("\n👉 **Where to start**: Trace the main entrypoint files in the root directory.")
 
         return "\n\n".join(sections)
 

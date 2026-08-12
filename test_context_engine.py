@@ -66,7 +66,7 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
         self.assertEqual(res["intent"], IntentCategory.REPO_ONBOARDING)
         self.assertEqual(res["author"], "NewContributor")
         self.assertIn("NewContributor", res["answer"])
-        self.assertIn("Recommended Learning Path", res["answer"])
+        self.assertIn("Repository Learning Overview", res["answer"])
         self.assertIn("Where to start", res["answer"])
         self.assertNotIn("KNOWLEDGE.md", res["files_read"])
 
