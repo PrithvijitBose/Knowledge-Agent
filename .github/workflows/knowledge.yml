@@ -32,7 +32,7 @@ jobs:
           MISTRAL_MODEL: 'mistral-small-2506'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python bot.py \
+          python knowledge_engine.py \
             --owner "${{ github.repository_owner }}" \
             --repo "${{ github.event.repository.name }}" \
             --issue "${{ github.event.issue.number }}" \
