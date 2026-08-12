@@ -1,23 +1,18 @@
-import os
-from dotenv import load_dotenv
+"""
+config.py — Backward-compatibility Shim
+Re-exports configuration variables from `knowledge_engine.py`.
+"""
 
-# Load environment variables from .env file if present
-load_dotenv()
+import knowledge_engine
 
-GITHUB_CLIENT_ID = os.getenv("GITHUB_CLIENT_ID", "")
-GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
-REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8501")
-
-# Mistral AI Configuration
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-2506")
+GITHUB_CLIENT_ID = knowledge_engine.GITHUB_CLIENT_ID
+GITHUB_CLIENT_SECRET = knowledge_engine.GITHUB_CLIENT_SECRET
+REDIRECT_URI = knowledge_engine.REDIRECT_URI
+MISTRAL_API_KEY = knowledge_engine.MISTRAL_API_KEY
+MISTRAL_MODEL = knowledge_engine.MISTRAL_MODEL
 
 def is_github_configured() -> bool:
-    """Check if GitHub OAuth client ID and secret are configured."""
-    return bool(GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET and 
-                GITHUB_CLIENT_ID != "your_github_client_id_here" and 
-                GITHUB_CLIENT_SECRET != "your_github_client_secret_here")
+    return knowledge_engine.is_github_configured()
 
 def is_mistral_configured() -> bool:
-    """Check if Mistral API key is configured."""
-    return bool(MISTRAL_API_KEY and MISTRAL_API_KEY != "your_mistral_api_key_here")
+    return knowledge_engine.is_mistral_configured()
