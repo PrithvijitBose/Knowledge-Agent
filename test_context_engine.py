@@ -51,7 +51,8 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
         self.assertEqual(res["intent"], IntentCategory.ARCHITECTURE_UNDERSTANDING)
         self.assertEqual(res["author"], "DeveloperJane")
         self.assertIn("DeveloperJane", res["answer"])
-        self.assertIn("Subsystem Architecture Overview", res["answer"])
+        self.assertIn("Where to start", res["answer"])
+        self.assertNotIn("KNOWLEDGE.md", res["files_read"])
 
     @patch("knowledge_engine.is_mistral_configured", return_value=False)
     def test_repo_onboarding_fallback_response(self, mock_mistral):
@@ -65,7 +66,9 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
         self.assertEqual(res["intent"], IntentCategory.REPO_ONBOARDING)
         self.assertEqual(res["author"], "NewContributor")
         self.assertIn("NewContributor", res["answer"])
-        self.assertIn("Cognitive Priority Tiering", res["answer"])
+        self.assertIn("Recommended Learning Path", res["answer"])
+        self.assertIn("Where to start", res["answer"])
+        self.assertNotIn("KNOWLEDGE.md", res["files_read"])
 
 
 if __name__ == "__main__":

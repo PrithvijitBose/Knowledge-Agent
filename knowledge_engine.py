@@ -470,67 +470,65 @@ class ContextExplainer:
     @staticmethod
     def build_system_prompt(intent: str, knowledge_rules: Optional[str], author: str = "Contributor") -> str:
         base = (
-            "You are @Knowledge, the Engineering Context Layer for this repository.\n"
-            "Your identity is NOT an AI coding bot or PR reviewer. Your sole purpose is: Help a contributor understand what they need to know BEFORE changing code.\n"
-            "Personalization Directive: Address the contributor @{author} directly, answer their exact specific query FIRST, and adapt your explanation structure strictly to their intent.\n"
+            "You are @Knowledge, a friendly, experienced Senior Engineer sitting beside @{author} for a 1-on-1 technical walkthrough.\n"
+            "Your goal is to help @{author} build a clear mental model of the repository so they understand what they are looking at and know where to start.\n\n"
+            "CRITICAL DIRECTIVES:\n"
+            "1. **Never mention AI agent rules**: NEVER mention, cite, or output AI agent rules (such as 'KNOWLEDGE.md', system rules, or anti-hallucination policies) in your answer. Use repository rules ONLY behind the scenes to ensure truthfulness.\n"
+            "2. **No robotic category templates**: Do NOT output rigid headers like 'Must Understand / Useful Later / Ignore for Now'. Explain relationships naturally.\n"
+            "3. **Senior Engineer Walkthrough Thinking**: Answer using 4 natural principles:\n"
+            "   - **What**: What is this part of the project doing?\n"
+            "   - **Why**: Why is it relevant to what @{author} asked?\n"
+            "   - **How**: How do the relevant components connect to each other?\n"
+            "   - **Where Next**: Give an obvious, unambiguous starting step ('Start with X -> then trace Y -> ignore Z for now').\n"
+            "4. **Human & Friendly Tone**: Write in warm, encouraging, professional Markdown. Address @{author} directly and answer their specific question FIRST.\n"
         )
 
         if knowledge_rules:
-            base += f"\n=== MANDATORY REPOSITORY RULES (KNOWLEDGE.md) ===\n{knowledge_rules}\n=================================================\n\n"
-            base += (
-                "Key Rules:\n"
-                "- Source Priority: 1. Target Issue/PR/Feature evidence, 2. Explicit docs, 3. README/CONTRIBUTING/KNOWLEDGE.md, 4. Source code.\n"
-                "- No Hallucination: Never invent APIs or requirements not backed by repo files.\n"
-                "- Insufficient Info: If sources lack details, explicitly defer to maintainers.\n"
-            )
+            base += f"\n=== INTERNAL EVIDENCE GUARDRAILS (KNOWLEDGE.md) ===\n{knowledge_rules}\n===================================================\n\n"
 
         if intent == IntentCategory.ISSUE_UNDERSTANDING:
             base += (
-                "\nStructure your response as:\n"
-                "1. **Direct Answer to @{author}'s Issue Query**\n"
-                "2. **What Must Be Understood First**\n"
-                "3. **Relevant Source Files & Docs**\n"
-                "4. **Known Constraints & Unknowns (Maintainer Input Required)**\n"
-                "5. **Suggested Exploration Path**"
+                "\nTargeted Strategy for Issue Query:\n"
+                "- Address @{author}'s question about the Issue directly.\n"
+                "- Explain what needs to be understood first in the codebase.\n"
+                "- Highlight relevant source files and explain WHY they matter and HOW they connect.\n"
+                "- Clearly identify any missing details that require maintainer input.\n"
+                "- Conclude with a clear 'Start Here' exploration step."
             )
         elif intent == IntentCategory.PR_UNDERSTANDING:
             base += (
-                "\nStructure your response as:\n"
-                "1. **Context & Purpose of PR**\n"
-                "2. **Linked Issues & Engineering Motivation**\n"
-                "3. **Key Changed Files & Architectural Impact**\n"
-                "4. **Reviewer Discussion & Historical Decisions**"
+                "\nTargeted Strategy for PR Query:\n"
+                "- Explain the core context, purpose, and motivation behind this Pull Request.\n"
+                "- Connect it to linked Issues and reviewer discussions.\n"
+                "- Walk through key changed files and their architectural impact.\n"
+                "- Conclude with what to inspect next."
             )
         elif intent == IntentCategory.REPO_ONBOARDING:
             base += (
-                "\nStructure your response as:\n"
-                "1. **Welcome & Repository Purpose**\n"
-                "2. **Prerequisites & Stack**\n"
-                "3. **Cognitive Priority Tiering**:\n"
-                "   - **Must Understand** (safe minimum required before contributing)\n"
-                "   - **Useful Later**\n"
-                "   - **Ignore for Now**\n"
-                "4. **Guided Learning Path** ('Why am I reading this next?')"
+                "\nTargeted Strategy for Repo Onboarding:\n"
+                "- Give @{author} a warm welcome and explain what the project is building.\n"
+                "- Explain the high-level architecture and how major directories/components fit together.\n"
+                "- Provide a practical, step-by-step learning sequence ('Start here -> then look at this flow').\n"
+                "- Mention necessary prerequisites and what can be safely ignored initially."
             )
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             base += (
-                "\nStructure your response as:\n"
-                "1. **High-Level Subsystem Architecture**\n"
-                "2. **Core Components & Key Source Files**\n"
-                "3. **Data / Request Execution Flow**\n"
-                "4. **Architectural Constraints & Design Decisions**"
+                "\nTargeted Strategy for Architecture Query:\n"
+                "- Walk @{author} through the subsystem architecture, data flow, and component interactions.\n"
+                "- Explain key source files and HOW they communicate with each other.\n"
+                "- Highlight architectural constraints or design patterns used.\n"
+                "- Conclude with the best file to start tracing the flow."
             )
         elif intent == IntentCategory.FEATURE_UNDERSTANDING:
             base += (
-                "\nStructure your response as:\n"
-                "1. **Feature Implementation Overview**\n"
-                "2. **Primary Code Entrypoints**\n"
-                "3. **How It Intersects With Other Modules**\n"
-                "4. **Key Files to Inspect**"
+                "\nTargeted Strategy for Feature Query:\n"
+                "- Explain how the specific feature is implemented in this codebase.\n"
+                "- Show the primary code entrypoints and connected modules.\n"
+                "- Provide a clear starting point for exploring the feature."
             )
         else:
             base += (
-                "\nStructure your response cleanly in Markdown focusing specifically on the user's question without dumping generic repository overviews."
+                "\nProvide a clear, friendly, direct walkthrough answering @{author}'s question with evidence from the repository."
             )
 
         return base.replace("{author}", author)
@@ -572,9 +570,11 @@ class ContextExplainer:
         if fetched_files:
             prompt += "\n--- RETRIEVED HIGH-SIGNAL EVIDENCE FILES ---\n"
             for fname, fcontent in fetched_files.items():
+                if fname == "KNOWLEDGE.md":
+                    continue
                 prompt += f"\nFile [{fname}]:\n{fcontent}\n"
 
-        prompt += f"\nPlease answer @{query_author}'s question directly adhering to KNOWLEDGE.md rules and intent structure:"
+        prompt += f"\nPlease walk @{query_author} through their question in a warm, senior-engineer style without mentioning agent rules or robotic headers:"
         return prompt
 
 
@@ -660,8 +660,8 @@ class KnowledgeAgent:
             "author": author,
             "intent": intent_info["intent"],
             "answer": llm_answer,
-            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Intent-Driven Engine]",
-            "files_read": list(evidence.get("fetched_files", {}).keys())
+            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Senior Engineer KT Engine]",
+            "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
         }
 
     @staticmethod
@@ -669,31 +669,33 @@ class KnowledgeAgent:
         intent = evidence.get("intent", IntentCategory.GENERAL_QUERY)
         fetched_files = evidence.get("fetched_files", {})
 
-        sections = [f"Hi **@{author}**, here is the engineering context tailored to your question:\n\n**Query**: *\"{query}\"*\n"]
+        sections = [f"Hi **@{author}**! Let me walk you through the engineering context for your question:\n\n> *\"{query}\"*\n"]
 
         if intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
-            sections.append("#### 🏗️ Subsystem Architecture Overview")
+            sections.append("### 🏗️ Architecture & Component Flow")
             if evidence.get("architecture_files"):
-                sections.append("Key architecture files found:\n" + "\n".join([f"- `{f}`" for f in evidence["architecture_files"]]))
+                sections.append("Here are the core subsystem files relevant to this area:\n" + "\n".join([f"- `{f}`" for f in evidence["architecture_files"]]))
             if "README.md" in fetched_files:
-                sections.append("```\n" + fetched_files["README.md"][:500] + "\n```")
+                sections.append("\n**Overview from Project Documentation**:\n" + fetched_files["README.md"][:500])
+            sections.append("\n👉 **Where to start**: Start by inspecting the entrypoint file in the architecture list above to trace how requests flow through the module.")
 
         elif intent == IntentCategory.REPO_ONBOARDING:
-            sections.append("#### 🎯 Cognitive Priority Tiering")
-            sections.append("- **Must Understand**: Core repository rules in `KNOWLEDGE.md` and basic project structure.")
-            sections.append("- **Useful Later**: Secondary module implementations.")
-            sections.append("- **Ignore for Now**: Infrastructure and build pipelines.")
+            sections.append("### 🧭 Recommended Learning Path")
+            sections.append("1. **Project Goal**: Read `README.md` to understand what this repository builds.")
+            sections.append("2. **Core Structure**: Explore main source directories to see how entrypoints connect to components.")
+            sections.append("3. **Developer Setup**: Read `CONTRIBUTING.md` or dependency manifests for build/test steps.")
+            sections.append("\n👉 **Where to start**: Start with `README.md`, then trace one primary feature flow before diving into deeper modules.")
 
         elif intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence:
             pr = evidence["pr"]
-            sections.append(f"#### 🔀 Pull Request #{pr.get('number')}: {pr.get('title')}")
-            sections.append(f"**Description**:\n{pr.get('body') or 'No description provided.'}")
+            sections.append(f"### 🔀 Pull Request #{pr.get('number')}: {pr.get('title')}")
+            sections.append(f"**Context & Purpose**:\n{pr.get('body') or 'No description provided.'}")
+            sections.append("\n👉 **Where to start**: Inspect the changed files list in the PR to see which components were modified.")
 
         else:
-            if "KNOWLEDGE.md" in fetched_files:
-                sections.append("#### 📜 Repository Guardrails (`KNOWLEDGE.md`)\n" + fetched_files["KNOWLEDGE.md"][:500])
             if "README.md" in fetched_files:
-                sections.append("#### 🚀 Project Overview\n" + fetched_files["README.md"][:500])
+                sections.append("### 🚀 Repository Overview\n" + fetched_files["README.md"][:500])
+            sections.append("\n👉 **Where to start**: Check the main entrypoint files in the root directory to trace execution flow.")
 
         return "\n\n".join(sections)
 
