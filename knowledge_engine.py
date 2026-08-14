@@ -197,6 +197,21 @@ class GitHubClient:
         return []
 
     @staticmethod
+    def fetch_latest_commit_sha(token: str, owner: str, repo: str, branch: Optional[str] = None) -> Optional[str]:
+        """Fetches the latest commit SHA for the target or default branch."""
+        target_branch = branch or "main"
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/commits/{target_branch}", headers=GitHubClient._get_headers(token))
+                if res.status_code != 200 and target_branch != "master":
+                    res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/commits/master", headers=GitHubClient._get_headers(token))
+                if res.status_code == 200:
+                    return res.json().get("sha", "")[:40]
+        except Exception as e:
+            print(f"GitHub API Error (fetch_latest_commit_sha): {e}")
+        return None
+
+    @staticmethod
     def post_issue_comment(token: str, owner: str, repo: str, issue_number: int, comment_body: str) -> bool:
         try:
             with httpx.Client(timeout=10.0) as client:
@@ -210,6 +225,7 @@ class GitHubClient:
         except Exception as e:
             print(f"GitHub API Error (post_issue_comment #{issue_number}): {e}")
             return False
+
 
 
 # =====================================================================
@@ -265,7 +281,27 @@ class RelationshipExtractor:
         return list(set(matches + defaults))
 
 
+class CitationFormatter:
+    """Generates clickable GitHub permalinks with commit SHAs for evidence files."""
+
+    @staticmethod
+    def format_file_permalink(owner: str, repo: str, commit_sha: Optional[str], file_path: str) -> str:
+        ref = commit_sha if commit_sha else "main"
+        return f"https://github.com/{owner}/{repo}/blob/{ref}/{file_path}"
+
+    @staticmethod
+    def build_citations_section(owner: str, repo: str, commit_sha: Optional[str], files_read: List[str]) -> str:
+        if not files_read:
+            return ""
+        lines = ["\n\n### 📚 Referenced Files & Citations"]
+        for f in sorted(files_read):
+            link = CitationFormatter.format_file_permalink(owner, repo, commit_sha, f)
+            lines.append(f"- [`{f}`]({link})")
+        return "\n".join(lines)
+
+
 class IntentCategory:
+
     ISSUE_UNDERSTANDING = "ISSUE_UNDERSTANDING"
     PR_UNDERSTANDING = "PR_UNDERSTANDING"
     REPO_ONBOARDING = "REPO_ONBOARDING"
@@ -348,6 +384,7 @@ class ContextRetriever:
         keywords = intent_info.get("keywords", [])
 
         knowledge_rules = GitHubClient.fetch_file_content(token, owner, repo, "KNOWLEDGE.md")
+        commit_sha = GitHubClient.fetch_latest_commit_sha(token, owner, repo)
         fetched_files = {}
         if knowledge_rules:
             fetched_files["KNOWLEDGE.md"] = knowledge_rules[:3000]
@@ -357,9 +394,11 @@ class ContextRetriever:
             "query": query,
             "owner": owner,
             "repo": repo,
+            "commit_sha": commit_sha,
             "knowledge_rules": knowledge_rules,
             "fetched_files": fetched_files
         }
+
 
         # Route retrieval based on Intent Category
         if intent == IntentCategory.PR_UNDERSTANDING:
@@ -693,14 +732,20 @@ class KnowledgeAgent:
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
 
+        files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
+        citations_text = CitationFormatter.build_citations_section(owner, repo, evidence.get("commit_sha"), files_read)
+
         return {
             "query": query,
             "author": author,
             "intent": intent_info["intent"],
             "answer": llm_answer,
+            "citations": citations_text,
+            "commit_sha": evidence.get("commit_sha"),
             "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
-            "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
+            "files_read": files_read
         }
+
 
     @staticmethod
     def _fallback_answer(query: str, author: str, evidence: Dict[str, Any]) -> str:
@@ -775,9 +820,11 @@ def process_github_comment(
     )
 
     answer_text = result.get("answer", "")
+    citations_text = result.get("citations", "")
     engine_used = result.get("engine", "Mistral AI Context Layer")
 
-    formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by @Knowledge Engineering Context Layer ({engine_used})*"
+    formatted_reply = f"{answer_text}{citations_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
+
 
     print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
     success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
