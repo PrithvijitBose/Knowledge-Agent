@@ -152,6 +152,35 @@ class GitHubClient:
             return []
 
     @staticmethod
+    def fetch_pr_diff(token: str, owner: str, repo: str, pr_number: int) -> Optional[str]:
+        """Fetches unified git diff for a pull request."""
+        try:
+            headers = GitHubClient._get_headers(token)
+            headers["Accept"] = "application/vnd.github.v3.diff"
+            with httpx.Client(timeout=15.0) as client:
+                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}", headers=headers)
+                if res.status_code == 200:
+                    return res.text
+        except Exception as e:
+            print(f"GitHub API Error (fetch_pr_diff #{pr_number}): {e}")
+        return None
+
+    @staticmethod
+    def fetch_pr_review_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+        """Fetches inline review comments on code diffs."""
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+                    headers=GitHubClient._get_headers(token)
+                )
+                if res.status_code == 200:
+                    return res.json()
+        except Exception as e:
+            print(f"GitHub API Error (fetch_pr_review_comments #{pr_number}): {e}")
+        return []
+
+    @staticmethod
     def fetch_pr_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
         comments = []
         try:
@@ -166,6 +195,7 @@ class GitHubClient:
         except Exception as e:
             print(f"GitHub API Error (fetch_pr_comments #{pr_number}): {e}")
         return comments
+
 
     @staticmethod
     def fetch_file_content(token: str, owner: str, repo: str, file_path: str) -> Optional[str]:
@@ -363,22 +393,34 @@ class ContextRetriever:
 
         # Route retrieval based on Intent Category
         if intent == IntentCategory.PR_UNDERSTANDING:
-            target_pr = pr_number or (intent_info.get("pr_numbers", [1])[0] if intent_info.get("pr_numbers") else 1)
-            pr = GitHubClient.fetch_pull_request(token, owner, repo, target_pr)
-            pr_comments = GitHubClient.fetch_pr_comments(token, owner, repo, target_pr)
-            changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
+            target_pr = pr_number or (intent_info.get("pr_numbers", [])[0] if intent_info.get("pr_numbers") else None)
+            if target_pr:
+                pr = GitHubClient.fetch_pull_request(token, owner, repo, target_pr)
+                pr_comments = GitHubClient.fetch_pr_comments(token, owner, repo, target_pr)
+                review_comments = GitHubClient.fetch_pr_review_comments(token, owner, repo, target_pr)
+                changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
+                diff = GitHubClient.fetch_pr_diff(token, owner, repo, target_pr)
 
-            evidence["pr"] = pr
-            evidence["pr_comments"] = pr_comments
-            evidence["changed_files"] = changed_files
+                evidence["pr"] = pr
+                evidence["pr_comments"] = pr_comments or []
+                evidence["review_comments"] = review_comments or []
+                evidence["changed_files"] = changed_files or []
+                evidence["diff"] = diff[:3500] if diff else None
 
-            # Fetch content of key changed files
-            for f in changed_files[:5]:
-                filename = f.get("filename")
-                if filename and filename not in fetched_files:
-                    content = GitHubClient.fetch_file_content(token, owner, repo, filename)
-                    if content:
-                        fetched_files[filename] = content[:2500]
+                # Fetch content of key changed files
+                for f in (changed_files or [])[:5]:
+                    filename = f.get("filename")
+                    if filename and filename not in fetched_files:
+                        content = GitHubClient.fetch_file_content(token, owner, repo, filename)
+                        if content:
+                            fetched_files[filename] = content[:2500]
+            else:
+                evidence["pr"] = None
+                evidence["pr_comments"] = []
+                evidence["review_comments"] = []
+                evidence["changed_files"] = []
+                evidence["diff"] = None
+
 
         elif intent == IntentCategory.REPO_ONBOARDING:
             readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
@@ -576,13 +618,18 @@ class ContextExplainer:
 
         prompt = f"Repository: {owner}/{repo}\nContributor (@{query_author}) asks: {query}\nDetected intent: {intent}\n\n"
 
-        if intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence:
+        if intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence and evidence["pr"]:
             pr = evidence["pr"]
             prompt += f"--- PULL REQUEST #{pr.get('number')} ---\nTitle: {pr.get('title')}\nBody:\n{pr.get('body')}\n"
             if evidence.get("changed_files"):
                 prompt += "\nChanged Files:\n" + "\n".join([f"- {f.get('filename')} (+{f.get('additions')}/-{f.get('deletions')})" for f in evidence["changed_files"]])
+            if evidence.get("diff"):
+                prompt += f"\n\n--- UNIFIED DIFF (Truncated) ---\n```diff\n{evidence['diff']}\n```\n"
+            if evidence.get("review_comments"):
+                prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][:5]])
             if evidence.get("pr_comments"):
                 prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
+
 
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             if evidence.get("architecture_files"):
