@@ -3,7 +3,7 @@ knowledge_agent.py — Backward-compatibility Shim
 Re-exports LLM synthesizer and detection logic from `knowledge_engine.py`.
 """
 
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 import knowledge_engine
 
 
@@ -32,14 +32,18 @@ def generate_knowledge_answer(
     repo: str,
     issue: Dict[str, Any],
     comments: List[Dict[str, Any]],
-    custom_query: str = ""
+    custom_query: str = "",
+    provider_name: Optional[str] = None,
+    model: Optional[str] = None
 ) -> Dict[str, Any]:
     query_text = custom_query or issue.get("body", "") or "What should I understand first?"
-    issue_num = issue.get("number", 1)
+    issue_num = issue.get("number")
     return knowledge_engine.KnowledgeAgent.generate_answer(
         token=access_token,
         owner=owner,
         repo=repo,
         query=query_text,
-        issue_number=issue_num
+        issue_number=issue_num,
+        provider_name=provider_name,
+        model=model
     )
