@@ -15,10 +15,9 @@ Features:
 import sys
 import os
 import re
-import urllib.parse
 import base64
 import argparse
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 import httpx
 from dotenv import load_dotenv
 
@@ -183,11 +182,25 @@ class GitHubClient:
             return None
 
     @staticmethod
-    def fetch_repo_tree(token: str, owner: str, repo: str) -> List[str]:
+    def fetch_repo_default_branch(token: str, owner: str, repo: str) -> str:
         try:
             with httpx.Client(timeout=10.0) as client:
-                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/trees/main?recursive=1", headers=GitHubClient._get_headers(token))
-                if res.status_code != 200:
+                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}", headers=GitHubClient._get_headers(token))
+                if res.status_code == 200:
+                    return res.json().get("default_branch", "main")
+        except Exception as e:
+            print(f"GitHub API Error (fetch_repo_default_branch): {e}")
+        return "main"
+
+    @staticmethod
+    def fetch_repo_tree(token: str, owner: str, repo: str, branch: Optional[str] = None) -> List[str]:
+        target_branch = branch or GitHubClient.fetch_repo_default_branch(token, owner, repo)
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/trees/{target_branch}?recursive=1", headers=GitHubClient._get_headers(token))
+                if res.status_code != 200 and target_branch != "main":
+                    res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/trees/main?recursive=1", headers=GitHubClient._get_headers(token))
+                if res.status_code != 200 and target_branch != "master":
                     res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/git/trees/master?recursive=1", headers=GitHubClient._get_headers(token))
                 if res.status_code == 200:
                     tree_data = res.json().get("tree", [])
@@ -261,8 +274,7 @@ class RelationshipExtractor:
             return []
         pattern = r'\b([a-zA-Z0-9_\-\/\.]+\.(?:md|txt|py|json|yml|yaml|env|toml|js|ts|jsx|tsx|html|css|go|rs|java|c|cpp|h))\b'
         matches = re.findall(pattern, text)
-        defaults = ["KNOWLEDGE.md", "README.md", "CONTRIBUTING.md", "requirements.txt", "config.py", "package.json"]
-        return list(set(matches + defaults))
+        return sorted(list(set(matches)))
 
 
 class IntentCategory:
@@ -363,22 +375,27 @@ class ContextRetriever:
 
         # Route retrieval based on Intent Category
         if intent == IntentCategory.PR_UNDERSTANDING:
-            target_pr = pr_number or (intent_info.get("pr_numbers", [1])[0] if intent_info.get("pr_numbers") else 1)
-            pr = GitHubClient.fetch_pull_request(token, owner, repo, target_pr)
-            pr_comments = GitHubClient.fetch_pr_comments(token, owner, repo, target_pr)
-            changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
+            target_pr = pr_number or (intent_info.get("pr_numbers", [])[0] if intent_info.get("pr_numbers") else None)
+            if target_pr:
+                pr = GitHubClient.fetch_pull_request(token, owner, repo, target_pr)
+                pr_comments = GitHubClient.fetch_pr_comments(token, owner, repo, target_pr)
+                changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
 
-            evidence["pr"] = pr
-            evidence["pr_comments"] = pr_comments
-            evidence["changed_files"] = changed_files
+                evidence["pr"] = pr
+                evidence["pr_comments"] = pr_comments or []
+                evidence["changed_files"] = changed_files or []
 
-            # Fetch content of key changed files
-            for f in changed_files[:5]:
-                filename = f.get("filename")
-                if filename and filename not in fetched_files:
-                    content = GitHubClient.fetch_file_content(token, owner, repo, filename)
-                    if content:
-                        fetched_files[filename] = content[:2500]
+                # Fetch content of key changed files
+                for f in (changed_files or [])[:5]:
+                    filename = f.get("filename")
+                    if filename and filename not in fetched_files:
+                        content = GitHubClient.fetch_file_content(token, owner, repo, filename)
+                        if content:
+                            fetched_files[filename] = content[:2500]
+            else:
+                evidence["pr"] = None
+                evidence["pr_comments"] = []
+                evidence["changed_files"] = []
 
         elif intent == IntentCategory.REPO_ONBOARDING:
             readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
@@ -445,14 +462,20 @@ class ContextRetriever:
                 fetched_files["DEPENDENCIES"] = reqs[:1500]
 
         else: # ISSUE_UNDERSTANDING or GENERAL_QUERY
-            target_issue = issue_number or (intent_info.get("issue_numbers", [1])[0] if intent_info.get("issue_numbers") else 1)
-            iss = GitHubClient.fetch_issue(token, owner, repo, target_issue)
-            comments = GitHubClient.fetch_issue_comments(token, owner, repo, target_issue)
+            target_issue = issue_number or (intent_info.get("issue_numbers", [])[0] if intent_info.get("issue_numbers") else None)
+            if target_issue:
+                iss = GitHubClient.fetch_issue(token, owner, repo, target_issue)
+                comments = GitHubClient.fetch_issue_comments(token, owner, repo, target_issue)
+                evidence["issue"] = iss or {"number": target_issue, "title": f"Issue #{target_issue}", "body": query}
+                evidence["comments"] = comments or []
+            else:
+                evidence["issue"] = None
+                evidence["comments"] = []
 
-            evidence["issue"] = iss or {"number": target_issue, "title": f"Issue #{target_issue}", "body": query}
-            evidence["comments"] = comments
-
-            combined_text = f"{evidence['issue'].get('title', '')}\n{evidence['issue'].get('body', '')}\n" + "\n".join([c.get('body', '') for c in comments])
+            combined_text = query
+            if evidence.get("issue"):
+                combined_text = f"{evidence['issue'].get('title', '')}\n{evidence['issue'].get('body', '')}\n" + "\n".join([c.get('body', '') for c in evidence.get("comments", [])])
+            
             ref_prs = RelationshipExtractor.extract_referenced_prs(combined_text)
             ref_files = RelationshipExtractor.extract_referenced_files(combined_text)
 
@@ -464,7 +487,13 @@ class ContextRetriever:
                     if content:
                         fetched_files[fname] = content[:2500]
 
+            if not fetched_files or len(fetched_files) <= 1:
+                readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
+                if readme and "README.md" not in fetched_files:
+                    fetched_files["README.md"] = readme[:2500]
+
         return evidence
+
 
 
 # =====================================================================
@@ -693,14 +722,25 @@ class KnowledgeAgent:
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
 
+        structured_context = {
+            "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
+            "directives": [c.get("body", "") for c in evidence.get("comments", []) if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
+            "referenced_files": evidence.get("fetched_files", {}),
+            "fetched_files": evidence.get("fetched_files", {}),
+            "intent": intent_info["intent"],
+            "evidence": evidence
+        }
+
         return {
             "query": query,
             "author": author,
             "intent": intent_info["intent"],
             "answer": llm_answer,
             "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
-            "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
+            "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"],
+            "structured_context": structured_context
         }
+
 
     @staticmethod
     def _fallback_answer(query: str, author: str, evidence: Dict[str, Any]) -> str:
@@ -761,8 +801,15 @@ def process_github_comment(
     print(f"🤖 Processing @Knowledge context request from @{comment_author} on {owner}/{repo} #{issue_number}...")
 
     is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
+    if not is_pr_target and access_token:
+        # Check if the target number is a pull request on GitHub
+        pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
+        if pr_check and "id" in pr_check:
+            is_pr_target = True
+
     pr_num = issue_number if is_pr_target else None
     issue_num = issue_number if not is_pr_target else None
+
 
     result = KnowledgeAgent.generate_answer(
         token=access_token,
