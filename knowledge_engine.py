@@ -777,7 +777,7 @@ def process_github_comment(
     answer_text = result.get("answer", "")
     engine_used = result.get("engine", "Mistral AI Context Layer")
 
-    formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by @Knowledge Engineering Context Layer ({engine_used})*"
+    formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
 
     print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
     success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
@@ -801,7 +801,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    token = args.token or os.getenv("GITHUB_TOKEN") or GITHUB_CLIENT_SECRET
+    token = args.token or os.getenv("GITHUB_TOKEN")
     if not token:
         print("Error: GitHub Token required via --token or GITHUB_TOKEN environment variable.")
         sys.exit(1)

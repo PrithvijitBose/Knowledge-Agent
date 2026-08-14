@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import config
 import github_auth
@@ -366,12 +367,13 @@ def main():
                         
                 # Display Selected Issue Details
                 st.markdown("---")
-                st.markdown(f"#### 📌 Issue #{selected_issue.get('number')}: {selected_issue.get('title')}")
-                st.caption(f"Posted by **@{selected_issue.get('user', {}).get('login')}**")
+                st.markdown(f"#### 📌 Issue #{selected_issue.get('number')}: {html.escape(str(selected_issue.get('title') or ''))}")
+                st.caption(f"Posted by **@{html.escape(str(selected_issue.get('user', {}).get('login') or ''))}**")
                 
+                escaped_issue_body = html.escape(str(selected_issue.get('body') or '*No issue body content.*')).replace('\n', '<br>')
                 st.markdown(f"""
                 <div style="background: rgba(30, 41, 59, 0.5); border-left: 4px solid #818cf8; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                    {selected_issue.get('body') or '*No issue body content.*'}
+                    {escaped_issue_body}
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -385,8 +387,8 @@ def main():
                     }]
                     
                 for c in comments:
-                    author = c.get('user', {}).get('login')
-                    body = c.get('body')
+                    author = html.escape(str(c.get('user', {}).get('login') or ''))
+                    body = html.escape(str(c.get('body') or '')).replace('\n', '<br>')
                     st.markdown(f"""
                     <div class="comment-box">
                         <div class="comment-author">@{author}</div>
