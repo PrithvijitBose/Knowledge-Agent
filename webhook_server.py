@@ -45,9 +45,10 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     body = comment.get("body", "")
     author = comment.get("user", {}).get("login", "")
     
-    # Check if @Knowledge is mentioned in the comment
-    if "@Knowledge" not in body and "@knowledge" not in body:
-        return {"status": "ignored", "reason": "No @Knowledge tag in comment body"}
+    # Check if @Knowledge or /knowledge is mentioned in the comment
+    body_lower = body.lower()
+    if "@knowledge" not in body_lower and "/knowledge" not in body_lower:
+        return {"status": "ignored", "reason": "No @Knowledge or /knowledge trigger in comment body"}
         
     issue = payload.get("issue", {})
     issue_number = issue.get("number")

@@ -754,11 +754,12 @@ def process_github_comment(
     comment_body: str,
     comment_author: str = "Contributor"
 ) -> bool:
-    if "@Knowledge" not in comment_body and "@knowledge" not in comment_body:
-        print("No @Knowledge mention found. Skipping.")
+    lower_body = comment_body.lower()
+    if "@knowledge" not in lower_body and "/knowledge" not in lower_body:
+        print("No @Knowledge or /knowledge trigger found. Skipping.")
         return False
 
-    print(f"🤖 Processing @Knowledge context request from @{comment_author} on {owner}/{repo} #{issue_number}...")
+    print(f"🤖 Processing Knowledge context request from @{comment_author} on {owner}/{repo} #{issue_number}...")
 
     is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
     pr_num = issue_number if is_pr_target else None
