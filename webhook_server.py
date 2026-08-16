@@ -4,6 +4,7 @@ import hashlib
 import json
 import config
 import bot
+import knowledge_engine
 
 try:
     from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
@@ -22,7 +23,7 @@ except ImportError:
 if FastAPI is not None:
     app = FastAPI(
         title="Knowledge GitHub Webhook Server",
-        description="Listens for native GitHub @Knowledge comment webhooks and replies automatically."
+        description="Listens for native GitHub @Knowledge and /knowledge comment webhooks and replies automatically."
     )
 else:
     app = None
@@ -57,12 +58,11 @@ if app is not None:
             "mistral_active": config.is_mistral_configured()
         }
 
-
     @app.post("/webhook")
     async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         """
         GitHub Webhook listener endpoint (event: issue_comment).
-        When someone posts '@Knowledge <question>' on GitHub, GitHub pings this endpoint.
+        When someone posts '@Knowledge <question>' or '/knowledge <question>' on GitHub, GitHub pings this endpoint.
         """
         body_bytes = await request.body()
         signature_header = request.headers.get("X-Hub-Signature-256")
@@ -96,9 +96,9 @@ if app is not None:
         body = comment.get("body", "")
         author = comment_user.get("login", "")
 
-        # Check if @Knowledge is mentioned in the comment
-        if "@Knowledge" not in body and "@knowledge" not in body:
-            return {"status": "ignored", "reason": "No @Knowledge tag in comment body"}
+        # Check if @Knowledge or /knowledge is mentioned with a canonical token
+        if not knowledge_engine.is_bot_triggered(body):
+            return {"status": "ignored", "reason": "No @Knowledge or /knowledge trigger in comment body"}
 
         issue = payload.get("issue", {})
         issue_number = issue.get("number")
