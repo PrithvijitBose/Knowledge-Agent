@@ -45,9 +45,7 @@ or harmful.
 
 ## Enforcement
 
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers. All complaints will be reviewed and
-investigated promptly and fairly.
+Instances of abusive, harassing, or otherwise unacceptable behavior may be reported confidentially to the project maintainers via [GitHub Security Advisories](https://github.com/PrithvijitBose/Knowledge-Agent/security/advisories) or directly by reaching out to the maintainers on GitHub. All complaints will be kept strictly confidential, and will be reviewed and investigated promptly and fairly. All community leaders are obligated to respect the privacy and security of the reporter of any incident.
 
 ## Attribution
 

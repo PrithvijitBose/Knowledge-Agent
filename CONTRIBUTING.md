@@ -46,7 +46,7 @@ Ensure all tests pass before submitting a pull request.
 ## Code Guidelines
 
 - **Zero-SDK LLM Adapters:** When adding or updating LLM providers in `providers.py`, use standard REST calls with `httpx` to avoid heavy external SDK dependencies.
-- **Security:** Never interpolate untrusted user comment bodies directly into shell commands. Pass them via environment variables. Verify HMAC signatures for all webhook endpoints.
+- **Security & Vulnerability Disclosure:** Never interpolate untrusted user comment bodies directly into shell commands. Pass them via environment variables. Verify HMAC signatures for all webhook endpoints. If you discover a security vulnerability, please report it privately through [GitHub Security Advisories](https://github.com/PrithvijitBose/Knowledge-Agent/security/advisories) rather than opening a public issue. Maintainers aim to acknowledge reports within 48 hours.
 - **Tone & Commits:** Use conventional commit messages (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`).
 
 ---

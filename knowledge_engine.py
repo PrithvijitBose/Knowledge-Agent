@@ -715,10 +715,6 @@ class KnowledgeAgent:
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
 
-        structured_context = {
-            "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
-            "directives": [c.get("body", "") for c in evidence.get("comments", []) if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
-
         discussion_comments = [
             *evidence.get("comments", []),
             *evidence.get("pr_comments", []),
@@ -726,7 +722,6 @@ class KnowledgeAgent:
         structured_context = {
             "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
             "directives": [c.get("body", "") for c in discussion_comments if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
-
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
             "intent": intent_info["intent"],
@@ -739,8 +734,6 @@ class KnowledgeAgent:
             "intent": intent_info["intent"],
             "answer": llm_answer,
             "engine": f"{provider.name.capitalize()} AI ({provider.model}) [Knowledge KT Engine]",
-
-            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
             "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"],
             "structured_context": structured_context
         }
@@ -790,6 +783,17 @@ class KnowledgeAgent:
 # 7. HEADLESS CLI BOT ENTRYPOINT
 # =====================================================================
 
+def is_bot_triggered(comment_body: str) -> bool:
+    """
+    Checks whether a comment text contains a valid '@knowledge' or '/knowledge' command token.
+    Uses boundary matching to avoid matching substrings in URLs or emails (e.g. not@knowledge.com).
+    """
+    if not comment_body:
+        return False
+    pattern = r'(?i)(?:^|[\s\(\[\{<"\'])((?:@|/)knowledge)(?:$|[\s\)\]\}>"\'\.,!?:;])'
+    return bool(re.search(pattern, comment_body))
+
+
 def process_github_comment(
     access_token: str,
     owner: str,
@@ -798,8 +802,7 @@ def process_github_comment(
     comment_body: str,
     comment_author: str = "Contributor"
 ) -> bool:
-    lower_body = comment_body.lower()
-    if "@knowledge" not in lower_body and "/knowledge" not in lower_body:
+    if not is_bot_triggered(comment_body):
         print("No @Knowledge or /knowledge trigger found. Skipping.")
         return False
 

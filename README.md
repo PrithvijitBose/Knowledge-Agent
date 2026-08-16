@@ -18,9 +18,9 @@
 
 ## 1-Minute GitHub Action Setup
 
-To add Knowledge Bot to any repository, copy these 3 files into your project:
+To add Knowledge Bot to any repository, copy these 4 files into your project:
 
-```
+```text
 Your-Repo/
 ├── .github/workflows/
 │   └── knowledge.yml       # GitHub Action workflow
