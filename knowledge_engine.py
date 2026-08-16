@@ -20,6 +20,7 @@ import argparse
 from typing import Dict, Any, List, Optional
 import httpx
 from dotenv import load_dotenv
+import providers
 
 # Load environment variables
 load_dotenv()
@@ -52,6 +53,11 @@ def is_github_configured() -> bool:
 def is_mistral_configured() -> bool:
     """Check if Mistral API key is configured."""
     return bool(MISTRAL_API_KEY and MISTRAL_API_KEY != "your_mistral_api_key")
+
+
+def is_llm_configured(provider_name: Optional[str] = None) -> bool:
+    """Check if the active or specified LLM provider is configured."""
+    return providers.get_provider(provider_name).is_configured()
 
 
 # =====================================================================
@@ -650,39 +656,23 @@ class ContextExplainer:
 # =====================================================================
 
 class KnowledgeAgent:
-    """Core AI synthesizer using intent-driven context selection and Mistral AI."""
+    """Core AI synthesizer using intent-driven context selection and LLM providers."""
 
     @staticmethod
     def call_mistral_api(prompt_system: str, prompt_user: str) -> str:
-        if not is_mistral_configured():
-            return ""
+        """Invokes Mistral AI API for backward compatibility."""
+        return providers.MistralProvider().generate(prompt_system, prompt_user)
 
-        headers = {
-            "Authorization": f"Bearer {MISTRAL_API_KEY}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        }
-        payload = {
-            "model": MISTRAL_MODEL,
-            "messages": [
-                {"role": "system", "content": prompt_system},
-                {"role": "user", "content": prompt_user}
-            ],
-            "temperature": 0.2,
-            "max_tokens": 1200
-        }
-
-        try:
-            with httpx.Client(timeout=30.0) as client:
-                res = client.post(MISTRAL_API_URL, headers=headers, json=payload)
-                res.raise_for_status()
-                data = res.json()
-                choices = data.get("choices", [])
-                if choices and "message" in choices[0]:
-                    return choices[0]["message"].get("content", "").strip()
-        except Exception as e:
-            print(f"Error invoking Mistral AI API ({MISTRAL_MODEL}): {e}")
-            return ""
+    @staticmethod
+    def call_llm(
+        prompt_system: str,
+        prompt_user: str,
+        provider_name: Optional[str] = None,
+        model: Optional[str] = None
+    ) -> str:
+        """Invokes the active or specified LLM provider."""
+        provider = providers.get_provider(provider_name, model=model)
+        return provider.generate(prompt_system, prompt_user)
 
     @staticmethod
     def generate_answer(
@@ -692,7 +682,9 @@ class KnowledgeAgent:
         query: str,
         author: str = "Contributor",
         issue_number: Optional[int] = None,
-        pr_number: Optional[int] = None
+        pr_number: Optional[int] = None,
+        provider_name: Optional[str] = None,
+        model: Optional[str] = None
     ) -> Dict[str, Any]:
         # 1. Intent Classification
         intent_info = IntentClassifier.classify(query)
@@ -716,11 +708,16 @@ class KnowledgeAgent:
         )
         user_prompt = ContextExplainer.build_user_prompt(evidence, query_author=author)
 
-        # 4. LLM Call
-        llm_answer = KnowledgeAgent.call_mistral_api(system_prompt, user_prompt)
+        # 4. LLM Call via Provider Router
+        provider = providers.get_provider(provider_name, model=model)
+        llm_answer = KnowledgeAgent.call_llm(system_prompt, user_prompt, provider_name=provider_name, model=model)
 
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
+
+        structured_context = {
+            "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
+            "directives": [c.get("body", "") for c in evidence.get("comments", []) if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
 
         discussion_comments = [
             *evidence.get("comments", []),
@@ -729,6 +726,7 @@ class KnowledgeAgent:
         structured_context = {
             "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
             "directives": [c.get("body", "") for c in discussion_comments if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
+
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
             "intent": intent_info["intent"],
@@ -740,6 +738,8 @@ class KnowledgeAgent:
             "author": author,
             "intent": intent_info["intent"],
             "answer": llm_answer,
+            "engine": f"{provider.name.capitalize()} AI ({provider.model}) [Knowledge KT Engine]",
+
             "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
             "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"],
             "structured_context": structured_context

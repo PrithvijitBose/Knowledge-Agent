@@ -164,8 +164,23 @@ def render_sidebar():
             
             st.markdown("---")
             st.metric(label="Total Repositories", value=len(st.session_state.repos))
-            st.markdown(f"**LLM Engine:** `{config.MISTRAL_MODEL if config.is_mistral_configured() else 'Fallback Summarizer'}`")
             
+            st.markdown("---")
+            st.markdown("#### 🧠 AI Provider")
+            all_providers = config.list_providers()
+            provider_options = list(all_providers.keys())
+            current_provider = st.session_state.get("selected_provider", "mistral")
+            provider_idx = provider_options.index(current_provider) if current_provider in provider_options else 0
+            selected_provider = st.selectbox(
+                "Active LLM Engine",
+                provider_options,
+                index=provider_idx,
+                format_func=lambda p: f"{p.capitalize()} {'(Configured)' if all_providers[p]['configured'] else '(Missing Key)'}"
+            )
+            st.session_state.selected_provider = selected_provider
+            active_info = all_providers.get(selected_provider, {})
+            st.caption(f"Model: `{active_info.get('model', 'default')}`")
+
             st.markdown("---")
             if st.button("🔌 Disconnect GitHub", use_container_width=True, type="secondary"):
                 st.session_state.access_token = None
@@ -181,8 +196,24 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             st.markdown("---")
+            st.markdown("#### 🧠 AI Provider")
+            all_providers = config.list_providers()
+            provider_options = list(all_providers.keys())
+            current_provider = st.session_state.get("selected_provider", "mistral")
+            provider_idx = provider_options.index(current_provider) if current_provider in provider_options else 0
+            selected_provider = st.selectbox(
+                "Active LLM Engine",
+                provider_options,
+                index=provider_idx,
+                format_func=lambda p: f"{p.capitalize()} {'(Configured)' if all_providers[p]['configured'] else '(Missing Key)'}"
+            )
+            st.session_state.selected_provider = selected_provider
+            active_info = all_providers.get(selected_provider, {})
+            st.caption(f"Model: `{active_info.get('model', 'default')}`")
+
+            st.markdown("---")
             st.info("💡 GitHub OAuth configured" if config.is_github_configured() else "⚠️ Requires .env OAuth keys")
-            st.info(f"🤖 Mistral AI active ({config.MISTRAL_MODEL})" if config.is_mistral_configured() else "💡 Mistral API key optional in .env")
+
 
 
 def render_workflow_diagram():
@@ -408,14 +439,16 @@ def main():
                     trigger_btn = st.button("🚀 Generate Engineering Handoff (Context Expansion V1)", type="primary", use_container_width=True)
                     
                 if trigger_btn:
-                    with st.spinner(f"🤖 Context Engine collecting PRs, comments & calling {config.MISTRAL_MODEL}..."):
+                    prov = st.session_state.get("selected_provider", "mistral")
+                    with st.spinner(f"🤖 Context Engine collecting PRs, comments & calling {prov.capitalize()} AI..."):
                         result = knowledge_agent.generate_knowledge_answer(
                             st.session_state.access_token,
                             owner,
                             repo,
                             selected_issue,
                             comments,
-                            custom_query=custom_q
+                            custom_query=custom_q,
+                            provider_name=prov
                         )
                         st.session_state.last_answer = result
                         
