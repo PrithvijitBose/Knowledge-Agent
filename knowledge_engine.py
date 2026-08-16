@@ -157,6 +157,35 @@ class GitHubClient:
             return []
 
     @staticmethod
+    def fetch_pr_diff(token: str, owner: str, repo: str, pr_number: int) -> Optional[str]:
+        """Fetches unified git diff for a pull request."""
+        try:
+            headers = GitHubClient._get_headers(token)
+            headers["Accept"] = "application/vnd.github.v3.diff"
+            with httpx.Client(timeout=15.0) as client:
+                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}", headers=headers)
+                if res.status_code == 200:
+                    return res.text
+        except Exception as e:
+            print(f"GitHub API Error (fetch_pr_diff #{pr_number}): {e}")
+        return None
+
+    @staticmethod
+    def fetch_pr_review_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+        """Fetches inline review comments on code diffs."""
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+                    headers=GitHubClient._get_headers(token)
+                )
+                if res.status_code == 200:
+                    return res.json()
+        except Exception as e:
+            print(f"GitHub API Error (fetch_pr_review_comments #{pr_number}): {e}")
+        return []
+
+    @staticmethod
     def fetch_pr_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
         comments = []
         try:
@@ -171,6 +200,7 @@ class GitHubClient:
         except Exception as e:
             print(f"GitHub API Error (fetch_pr_comments #{pr_number}): {e}")
         return comments
+
 
     @staticmethod
     def fetch_file_content(token: str, owner: str, repo: str, file_path: str) -> Optional[str]:
@@ -424,11 +454,21 @@ class ContextRetriever:
             if target_pr:
                 pr = GitHubClient.fetch_pull_request(token, owner, repo, target_pr)
                 pr_comments = GitHubClient.fetch_pr_comments(token, owner, repo, target_pr)
+
+                review_comments = GitHubClient.fetch_pr_review_comments(token, owner, repo, target_pr)
                 changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
+                diff = GitHubClient.fetch_pr_diff(token, owner, repo, target_pr)
 
                 evidence["pr"] = pr
                 evidence["pr_comments"] = pr_comments or []
+                evidence["review_comments"] = review_comments or []
                 evidence["changed_files"] = changed_files or []
+                evidence["diff"] = diff[:3500] if diff else None
+                changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
+                evidence["pr"] = pr
+                evidence["pr_comments"] = pr_comments or []
+                evidence["changed_files"] = changed_files or []
+
 
                 # Fetch content of key changed files
                 for f in (changed_files or [])[:5]:
@@ -440,6 +480,11 @@ class ContextRetriever:
             else:
                 evidence["pr"] = None
                 evidence["pr_comments"] = []
+                evidence["review_comments"] = []
+                evidence["changed_files"] = []
+                evidence["diff"] = None
+
+
                 evidence["changed_files"] = []
 
         elif intent == IntentCategory.REPO_ONBOARDING:
@@ -650,13 +695,18 @@ class ContextExplainer:
 
         prompt = f"Repository: {owner}/{repo}\nContributor (@{query_author}) asks: {query}\nDetected intent: {intent}\n\n"
 
-        if intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence:
+        if intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence and evidence["pr"]:
             pr = evidence["pr"]
             prompt += f"--- PULL REQUEST #{pr.get('number')} ---\nTitle: {pr.get('title')}\nBody:\n{pr.get('body')}\n"
             if evidence.get("changed_files"):
                 prompt += "\nChanged Files:\n" + "\n".join([f"- {f.get('filename')} (+{f.get('additions')}/-{f.get('deletions')})" for f in evidence["changed_files"]])
+            if evidence.get("diff"):
+                prompt += f"\n\n--- UNIFIED DIFF (Truncated) ---\n```diff\n{evidence['diff']}\n```\n"
+            if evidence.get("review_comments"):
+                prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][:5]])
             if evidence.get("pr_comments"):
                 prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
+
 
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             if evidence.get("architecture_files"):
@@ -833,7 +883,73 @@ class KnowledgeAgent:
 
 
 # =====================================================================
-# 7. HEADLESS CLI BOT ENTRYPOINT
+# 7. EXECUTION TRACER & STEP SUMMARY
+# =====================================================================
+
+
+class ExecutionTracer:
+    """Records execution metrics, latencies, and writes formatted GitHub Step Summaries."""
+
+    def __init__(self, owner: str, repo: str, issue_number: int, author: str):
+        import time
+        self._time = time
+        self.owner = owner
+        self.repo = repo
+        self.issue_number = issue_number
+        self.author = author
+        self.start_time = time.time()
+        self.intent: str = "UNKNOWN"
+        self.files_read: List[str] = []
+        self.engine: str = "Unknown"
+        self.success: bool = False
+
+    def finish(self, success: bool, result: Dict[str, Any]):
+        self.success = success
+        self.intent = result.get("intent", self.intent)
+        self.files_read = result.get("files_read", self.files_read)
+        self.engine = result.get("engine", self.engine)
+        self.write_step_summary()
+
+    def generate_markdown_summary(self) -> str:
+        total_time = round(self._time.time() - self.start_time, 2)
+        status_badge = "✅ **Success**" if self.success else "❌ **Failed**"
+
+        md = [
+            f"## 🧠 Knowledge Agent Execution Summary",
+            f"",
+            f"| Metric | Value |",
+            f"| :--- | :--- |",
+            f"| **Target** | `{self.owner}/{self.repo}#{self.issue_number}` |",
+            f"| **Trigger Author** | `@{self.author}` |",
+            f"| **Status** | {status_badge} |",
+            f"| **Detected Intent** | `{self.intent}` |",
+            f"| **AI Engine** | `{self.engine}` |",
+            f"| **Total Elapsed Time** | `{total_time}s` |",
+            f"| **Evidence Files Read** | `{len(self.files_read)} files` |",
+            f"",
+        ]
+        if self.files_read:
+            md.append("### 📁 Evaluated Files")
+            for f in sorted(self.files_read):
+                md.append(f"- `{f}`")
+            md.append("")
+
+        return "\n".join(md)
+
+    def write_step_summary(self):
+        summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+        if not summary_path:
+            return
+        try:
+            content = self.generate_markdown_summary()
+            with open(summary_path, "a", encoding="utf-8") as f:
+                f.write(content + "\n")
+        except Exception as e:
+            print(f"Failed to write GITHUB_STEP_SUMMARY: {e}")
+
+
+# =====================================================================
+# 8. HEADLESS CLI BOT ENTRYPOINT
 # =====================================================================
 
 def is_bot_triggered(comment_body: str) -> bool:
@@ -859,28 +975,31 @@ def process_github_comment(
         print("No @Knowledge or /knowledge trigger found. Skipping.")
         return False
 
+
+    tracer = ExecutionTracer(owner, repo, issue_number, comment_author)
     print(f"🤖 Processing Knowledge context request from @{comment_author} on {owner}/{repo} #{issue_number}...")
 
-    is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
-    if not is_pr_target and access_token:
-        # Check if the target number is a pull request on GitHub
-        pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
-        if pr_check and "id" in pr_check:
-            is_pr_target = True
+    success = False
+    result: Dict[str, Any] = {}
+    try:
+        is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
+        if not is_pr_target and access_token:
+            pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
+            if pr_check and "id" in pr_check:
+                is_pr_target = True
 
-    pr_num = issue_number if is_pr_target else None
-    issue_num = issue_number if not is_pr_target else None
+        pr_num = issue_number if is_pr_target else None
+        issue_num = issue_number if not is_pr_target else None
 
-
-    result = KnowledgeAgent.generate_answer(
-        token=access_token,
-        owner=owner,
-        repo=repo,
-        query=comment_body,
-        author=comment_author,
-        issue_number=issue_num,
-        pr_number=pr_num
-    )
+        result = KnowledgeAgent.generate_answer(
+            token=access_token,
+            owner=owner,
+            repo=repo,
+            query=comment_body,
+            author=comment_author,
+            issue_number=issue_num,
+            pr_number=pr_num
+        )
 
     answer_text = result.get("answer", "")
     citations_text = result.get("citations", "")
@@ -891,13 +1010,23 @@ def process_github_comment(
 
     print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
     success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
+        answer_text = result.get("answer", "")
+        engine_used = result.get("engine", "Mistral AI Context Layer")
 
-    if success:
-        print("🎉 Successfully posted response to GitHub!")
-    else:
-        print("❌ Failed to post response to GitHub.")
+        formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
 
-    return success
+        print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
+        success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
+
+        if success:
+            print("🎉 Successfully posted response to GitHub!")
+        else:
+            print("❌ Failed to post response to GitHub.")
+
+        return success
+    finally:
+        tracer.finish(success, result)
+
 
 
 if __name__ == "__main__":
