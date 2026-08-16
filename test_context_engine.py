@@ -93,7 +93,7 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
     @patch.object(GitHubClient, "fetch_pr_comments", return_value=[])
     @patch.object(GitHubClient, "fetch_pr_files", return_value=[{"filename": "auth.py"}])
     @patch.object(GitHubClient, "fetch_file_content", return_value="def login(): pass")
-    @patch.object(KnowledgeAgent, "call_mistral_api", return_value="Here is how the PR works.")
+    @patch.object(KnowledgeAgent, "call_llm", return_value="Here is how the PR works.")
     @patch("knowledge_engine.is_mistral_configured", return_value=True)
     def test_pr_understanding_flow(self, mock_mistral_cfg, mock_llm, mock_file, mock_pr_files, mock_comments, mock_pr):
         res = KnowledgeAgent.generate_answer(
@@ -111,7 +111,7 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
     @patch.object(GitHubClient, "fetch_issue", return_value={"title": "Bug in login", "body": "Login fails with 500"})
     @patch.object(GitHubClient, "fetch_issue_comments", return_value=[{"body": "Fixed in PR #12"}])
     @patch.object(GitHubClient, "fetch_file_content", return_value="# Rules")
-    @patch.object(KnowledgeAgent, "call_mistral_api", return_value="Here is the issue context.")
+    @patch.object(KnowledgeAgent, "call_llm", return_value="Here is the issue context.")
     @patch("knowledge_engine.is_mistral_configured", return_value=True)
     def test_issue_understanding_flow(self, mock_mistral_cfg, mock_llm, mock_file, mock_comments, mock_issue):
         res = KnowledgeAgent.generate_answer(

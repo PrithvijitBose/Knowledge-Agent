@@ -715,10 +715,6 @@ class KnowledgeAgent:
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
 
-        structured_context = {
-            "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
-            "directives": [c.get("body", "") for c in evidence.get("comments", []) if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
-
         discussion_comments = [
             *evidence.get("comments", []),
             *evidence.get("pr_comments", []),
@@ -726,7 +722,6 @@ class KnowledgeAgent:
         structured_context = {
             "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
             "directives": [c.get("body", "") for c in discussion_comments if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
-
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
             "intent": intent_info["intent"],
@@ -739,8 +734,6 @@ class KnowledgeAgent:
             "intent": intent_info["intent"],
             "answer": llm_answer,
             "engine": f"{provider.name.capitalize()} AI ({provider.model}) [Knowledge KT Engine]",
-
-            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
             "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"],
             "structured_context": structured_context
         }
