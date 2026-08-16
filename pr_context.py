@@ -6,6 +6,7 @@ Re-exports PR context engine from `knowledge_engine.py`.
 from typing import Dict, Any, List, Optional
 import knowledge_engine
 
+
 class PRContext:
     @staticmethod
     def get_issue_context(access_token: str, owner: str, repo: str, issue_number: int) -> Optional[Dict[str, Any]]:
@@ -33,4 +34,15 @@ class PRContext:
 
     @staticmethod
     def get_final_context(access_token: str, owner: str, repo: str, issue_number: int, target_pr_number: Optional[int] = None) -> Dict[str, Any]:
-        return knowledge_engine.EngineeringContextGraph.build_issue_context(access_token, owner, repo, issue_number)
+        intent_info = {"intent": knowledge_engine.IntentCategory.ISSUE_UNDERSTANDING, "issue_numbers": [issue_number]}
+        if target_pr_number:
+            intent_info = {"intent": knowledge_engine.IntentCategory.PR_UNDERSTANDING, "pr_numbers": [target_pr_number]}
+        return knowledge_engine.ContextRetriever.discover_context(
+            token=access_token,
+            owner=owner,
+            repo=repo,
+            query=f"Issue #{issue_number}",
+            intent_info=intent_info,
+            issue_number=issue_number,
+            pr_number=target_pr_number
+        )
