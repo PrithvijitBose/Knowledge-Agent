@@ -1,55 +1,104 @@
 # Knowledge — Engineering Context Layer (Native GitHub Bot)
 
-**Knowledge** is an engineering context assistant powered by **Mistral AI (`mistral-small-2506`)**. It operates **100% natively inside GitHub** (like CodeRabbit) and includes an interactive **Streamlit Web Dashboard**.
-
-When a contributor comments `@Knowledge <question>` on any GitHub Issue or Pull Request, Knowledge automatically constructs an engineering context graph, enforces repository rules from [`KNOWLEDGE.md`](KNOWLEDGE.md), categorizes information into cognitive priority tiers, and posts a cited answer directly back to GitHub!
+**Knowledge** is an engineering context layer bot designed to run natively inside GitHub Issues and Pull Requests. When a contributor or maintainer comments `@Knowledge <question>` or `/knowledge <question>`, the engine classifies query intent, retrieves bounded evidence across repository files and conversation threads, enforces repository rules from `KNOWLEDGE.md`, and posts a structured engineering handoff directly back to GitHub.
 
 ---
 
-## ⚡ 1-Minute Setup Guide (Ultra-Low File Footprint)
+## Features
 
-Users only need to copy **1 Python file** (`knowledge_engine.py`) and **1 Workflow file** (`.github/workflows/knowledge.yml`) to run the bot in any consumer repository!
+- **GitHub-Native Interaction:** Triggered automatically by commenting `@Knowledge <question>` or `/knowledge <question>` on any Issue or PR.
+- **Multi-LLM Provider Architecture:** Native REST adapters for Mistral AI, OpenAI, Anthropic Claude, Google Gemini, Groq, and local Ollama without heavy SDK dependencies.
+- **Intent-Driven Context Retrieval:** Classifies queries across 7 intent categories (PR understanding, repo onboarding, architecture explanation, contribution guidance, feature flows, historical decisions, and issue onboarding) to collect high-signal evidence.
+- **Mandatory Guardrail Enforcement:** Parses repository guidelines from `KNOWLEDGE.md` and injects them into system instructions.
+- **Hermetic Testing:** 100% offline unit tests with mock fixtures and automated GitHub Actions CI matrix across Python 3.10, 3.11, and 3.12.
+- **Dual Deployment Options:** Serverless GitHub Actions runner or standalone FastAPI webhook server with HMAC-SHA256 signature verification.
+- **Streamlit Web Dashboard:** Interactive UI for exploring repository context graphs, testing questions, and visualizing evidence sets.
 
-### 1. Copy Files to Your Repository
-Copy these **3 files** into your GitHub repository:
+---
 
-```
+## 1-Minute GitHub Action Setup
+
+To add Knowledge Bot to any repository, copy these 4 files into your project:
+
+```text
 Your-Repo/
 ├── .github/workflows/
 │   └── knowledge.yml       # GitHub Action workflow
-├── knowledge_engine.py     # ⚡ UNIFIED CORE ENGINE (1 single Python file!)
-└── KNOWLEDGE.md            # Mandatory repository rulebook
+├── knowledge_engine.py     # Unified core engine
+├── providers.py            # Multi-LLM provider adapters
+└── KNOWLEDGE.md            # Repository rulebook & guidelines
 ```
 
-### 2. Add your Mistral API Key to GitHub Secrets
-1. Go to your repository on GitHub: **Settings ➔ Secrets and variables ➔ Actions**.
-2. Click **New repository secret**.
-3. **Name**: `MISTRAL_API_KEY`
-4. **Value**: Your Mistral API Key.
-5. Click **Add secret**.
+### GitHub Secrets Configuration
 
-### 3. Test It Live!
-Open any Issue or Pull Request on your GitHub repository and post a comment:
-```markdown
-@Knowledge I have never worked on this repository. How should I learn this codebase?
-```
-Knowledge will automatically run via GitHub Actions, build the context graph, and reply directly on your GitHub issue thread!
+In your repository settings (**Settings ➔ Secrets and variables ➔ Actions**), add your LLM API key:
+
+| Secret Name | Description | Default Model |
+| :--- | :--- | :--- |
+| `MISTRAL_API_KEY` | Mistral AI API Key | `mistral-small-2506` |
+| `OPENAI_API_KEY` | OpenAI API Key | `gpt-4o-mini` |
+| `ANTHROPIC_API_KEY` | Anthropic Claude API Key | `claude-3-5-haiku-20241022` |
+| `GEMINI_API_KEY` | Google Gemini API Key | `gemini-1.5-flash` |
+| `GROQ_API_KEY` | Groq Ultra-fast API Key | `llama-3.3-70b-versatile` |
 
 ---
 
-## 📁 Project Structure
+## Multi-LLM Provider Configuration
 
+Knowledge auto-detects configured provider keys from your environment. You can explicitly set the active provider using `LLM_PROVIDER`:
+
+```bash
+# Set active provider
+export LLM_PROVIDER=openai  # mistral | openai | anthropic | gemini | groq | ollama
+
+# Set provider-specific model override (optional)
+export OPENAI_MODEL=gpt-4o
+export ANTHROPIC_MODEL=claude-3-5-sonnet-20241022
+export GEMINI_MODEL=gemini-1.5-pro
+export GROQ_MODEL=llama-3.3-70b-versatile
 ```
-Knowledge/
-├── .github/workflows/
-│   └── knowledge.yml       # GitHub Action workflow (runs knowledge_engine.py)
-├── knowledge_engine.py     # ⚡ UNIFIED CORE ENGINE (Config + API Client + Context Graph + LLM Synthesizer)
-├── KNOWLEDGE.md            # Mandatory repository rules & guardrails
-├── DECISION.md             # Architectural decision log & tradeoffs
-├── FLOW.md                 # Call graph & execution reference
-├── bot.py                  # CLI runner shim (delegates to knowledge_engine.py)
-├── app.py                  # Streamlit Web Dashboard UI
-├── webhook_server.py       # FastAPI webhook server
-├── requirements.txt        # Python dependencies
-└── README.md               # Documentation
+
+### Local / Air-Gapped Execution with Ollama
+
+To run Knowledge without third-party API calls using local Ollama models:
+
+```bash
+export LLM_PROVIDER=ollama
+export OLLAMA_HOST=http://localhost:11434
+export OLLAMA_MODEL=llama3.2:latest
 ```
+
+---
+
+## Local Development & Testing
+
+```bash
+# Clone the repository
+git clone https://github.com/PrithvijitBose/Knowledge-Agent.git
+cd Knowledge-Agent
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run all hermetic unit tests offline
+python -m unittest discover -s . -p "test_*.py"
+```
+
+---
+
+## Webhook Server Deployment
+
+For real-time webhook deployments with custom domains:
+
+```bash
+# Start FastAPI Webhook Server on port 8000
+python webhook_server.py
+```
+
+Set `GITHUB_WEBHOOK_SECRET` in your environment to automatically enforce HMAC-SHA256 signature verification on inbound webhooks.
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).

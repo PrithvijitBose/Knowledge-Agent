@@ -783,6 +783,7 @@ class KnowledgeAgent:
 # 7. EXECUTION TRACER & STEP SUMMARY
 # =====================================================================
 
+
 class ExecutionTracer:
     """Records execution metrics, latencies, and writes formatted GitHub Step Summaries."""
 
@@ -870,6 +871,7 @@ def process_github_comment(
     if not is_bot_triggered(comment_body):
         print("No @Knowledge or /knowledge trigger found. Skipping.")
         return False
+
 
     tracer = ExecutionTracer(owner, repo, issue_number, comment_author)
     print(f"🤖 Processing Knowledge context request from @{comment_author} on {owner}/{repo} #{issue_number}...")
