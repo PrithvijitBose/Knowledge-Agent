@@ -57,7 +57,7 @@ def read_root():
     }
 
 
-async def github_webhook(request, background_tasks):
+async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     GitHub Webhook listener endpoint (event: issue_comment).
     When someone posts '@Knowledge <question>' or '/knowledge <question>' on GitHub, GitHub pings this endpoint.
