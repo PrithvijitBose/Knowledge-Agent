@@ -7,10 +7,11 @@ on:
 permissions:
   contents: read
   issues: write
+  pull-requests: write
 
 jobs:
   knowledge_bot:
-    if: contains(github.event.comment.body, '@Knowledge') || contains(github.event.comment.body, '@knowledge')
+    if: (contains(github.event.comment.body, '@Knowledge') || contains(github.event.comment.body, '@knowledge')) && github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
 
     steps:
@@ -31,9 +32,15 @@ jobs:
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
           MISTRAL_MODEL: 'mistral-small-2506'
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           python knowledge_engine.py \
-            --owner "${{ github.repository_owner }}" \
-            --repo "${{ github.event.repository.name }}" \
-            --issue "${{ github.event.issue.number }}" \
-            --comment "${{ github.event.comment.body }}"
+            --owner "$REPO_OWNER" \
+            --repo "$REPO_NAME" \
+            --issue "$ISSUE_NUMBER" \
+            --comment "$COMMENT_BODY" \
+            --author "$COMMENT_AUTHOR"

@@ -89,6 +89,60 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
         self.assertIn("couldn't find enough project-specific information", res["answer"])
         self.assertNotIn("KNOWLEDGE.md", res["files_read"])
 
+    @patch.object(GitHubClient, "fetch_pull_request", return_value={"title": "Add OAuth", "body": "Implements login"})
+    @patch.object(GitHubClient, "fetch_pr_comments", return_value=[])
+    @patch.object(GitHubClient, "fetch_pr_files", return_value=[{"filename": "auth.py"}])
+    @patch.object(GitHubClient, "fetch_file_content", return_value="def login(): pass")
+    @patch.object(KnowledgeAgent, "call_mistral_api", return_value="Here is how the PR works.")
+    @patch("knowledge_engine.is_mistral_configured", return_value=True)
+    def test_pr_understanding_flow(self, mock_mistral_cfg, mock_llm, mock_file, mock_pr_files, mock_comments, mock_pr):
+        res = KnowledgeAgent.generate_answer(
+            token="mock_token",
+            owner="demo",
+            repo="demo-repo",
+            query="@Knowledge Explain PR #10",
+            author="ReviewerBob",
+            pr_number=10
+        )
+        self.assertEqual(res["intent"], IntentCategory.PR_UNDERSTANDING)
+        self.assertEqual(res["answer"], "Here is how the PR works.")
+        self.assertIn("auth.py", res["files_read"])
+
+    @patch.object(GitHubClient, "fetch_issue", return_value={"title": "Bug in login", "body": "Login fails with 500"})
+    @patch.object(GitHubClient, "fetch_issue_comments", return_value=[{"body": "Fixed in PR #12"}])
+    @patch.object(GitHubClient, "fetch_file_content", return_value="# Rules")
+    @patch.object(KnowledgeAgent, "call_mistral_api", return_value="Here is the issue context.")
+    @patch("knowledge_engine.is_mistral_configured", return_value=True)
+    def test_issue_understanding_flow(self, mock_mistral_cfg, mock_llm, mock_file, mock_comments, mock_issue):
+        res = KnowledgeAgent.generate_answer(
+            token="mock_token",
+            owner="demo",
+            repo="demo-repo",
+            query="@Knowledge What is Issue #5 about?",
+            author="DevAlice",
+            issue_number=5
+        )
+        self.assertEqual(res["intent"], IntentCategory.ISSUE_UNDERSTANDING)
+        self.assertEqual(res["answer"], "Here is the issue context.")
+
+    @patch("builtins.print")
+    @patch.object(GitHubClient, "post_issue_comment", return_value=True)
+    @patch.object(KnowledgeAgent, "generate_answer", return_value={"answer": "Mock answer", "engine": "Mistral AI"})
+    def test_process_github_comment_success(self, mock_gen, mock_post, mock_print):
+        success = knowledge_engine.process_github_comment(
+            access_token="mock_token",
+            owner="demo",
+            repo="demo-repo",
+            issue_number=1,
+            comment_body="@Knowledge Explain the setup",
+            comment_author="Alice"
+        )
+        self.assertTrue(success)
+        mock_post.assert_called_once()
+        args, _ = mock_post.call_args
+        self.assertIn("Mock answer", args[4])
+        self.assertIn("Engineering Context Layer", args[4])
+
 
 if __name__ == "__main__":
     unittest.main()

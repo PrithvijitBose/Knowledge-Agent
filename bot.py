@@ -9,6 +9,7 @@ import os
 import argparse
 import knowledge_engine
 
+
 def process_github_comment(
     access_token: str,
     owner: str,
@@ -26,6 +27,7 @@ def process_github_comment(
         comment_author=comment_author
     )
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Knowledge GitHub Bot CLI Runner")
     parser.add_argument("--owner", required=True, help="GitHub repository owner")
@@ -33,10 +35,11 @@ if __name__ == "__main__":
     parser.add_argument("--issue", type=int, required=True, help="Issue or PR number")
     parser.add_argument("--comment", required=True, help="Comment body containing @Knowledge")
     parser.add_argument("--token", help="GitHub OAuth or Personal Access Token")
+    parser.add_argument("--author", default="Contributor", help="Comment author username")
 
     args = parser.parse_args()
 
-    token = args.token or os.getenv("GITHUB_TOKEN") or knowledge_engine.GITHUB_CLIENT_SECRET
+    token = args.token or os.getenv("GITHUB_TOKEN")
     if not token:
         print("Error: GitHub Token required via --token or GITHUB_TOKEN environment variable.")
         sys.exit(1)
@@ -46,5 +49,6 @@ if __name__ == "__main__":
         owner=args.owner,
         repo=args.repo,
         issue_number=args.issue,
-        comment_body=args.comment
+        comment_body=args.comment,
+        comment_author=args.author
     )
