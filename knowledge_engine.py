@@ -807,9 +807,7 @@ class KnowledgeAgent:
 
         files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
         citations_text = CitationFormatter.build_citations_section(owner, repo, evidence.get("commit_sha"), files_read)
-        structured_context = {
-            "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
-            "directives": [c.get("body", "") for c in evidence.get("comments", []) if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
+
         discussion_comments = [
             *evidence.get("comments", []),
             *evidence.get("pr_comments", []),
@@ -823,7 +821,6 @@ class KnowledgeAgent:
             "evidence": evidence
         }
 
-
         return {
             "query": query,
             "author": author,
@@ -831,14 +828,9 @@ class KnowledgeAgent:
             "answer": llm_answer,
             "citations": citations_text,
             "commit_sha": evidence.get("commit_sha"),
-            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
-            "files_read": files_read
             "engine": f"{provider.name.capitalize()} AI ({provider.model}) [Knowledge KT Engine]",
-            "engine": f"Mistral AI ({MISTRAL_MODEL}) [Knowledge KT Engine]",
-
-            "files_read": [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"],
+            "files_read": files_read,
             "structured_context": structured_context
-
         }
 
 
@@ -1001,19 +993,10 @@ def process_github_comment(
             pr_number=pr_num
         )
 
-    answer_text = result.get("answer", "")
-    citations_text = result.get("citations", "")
-    engine_used = result.get("engine", "Mistral AI Context Layer")
-    formatted_reply = f"{answer_text}{citations_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
-    formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
-
-
-    print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
-    success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
         answer_text = result.get("answer", "")
+        citations_text = result.get("citations", "")
         engine_used = result.get("engine", "Mistral AI Context Layer")
-
-        formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
+        formatted_reply = f"{answer_text}{citations_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
 
         print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
         success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
