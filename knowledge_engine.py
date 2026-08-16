@@ -811,6 +811,17 @@ class ExecutionTracer:
 # 8. HEADLESS CLI BOT ENTRYPOINT
 # =====================================================================
 
+def is_bot_triggered(comment_body: str) -> bool:
+    """
+    Checks whether a comment text contains a valid '@knowledge' or '/knowledge' command token.
+    Uses boundary matching to avoid matching substrings in URLs or emails (e.g. not@knowledge.com).
+    """
+    if not comment_body:
+        return False
+    pattern = r'(?i)(?:^|[\s\(\[\{<"\'])((?:@|/)knowledge)(?:$|[\s\)\]\}>"\'\.,!?:;])'
+    return bool(re.search(pattern, comment_body))
+
+
 def process_github_comment(
     access_token: str,
     owner: str,
@@ -819,42 +830,51 @@ def process_github_comment(
     comment_body: str,
     comment_author: str = "Contributor"
 ) -> bool:
-    if "@Knowledge" not in comment_body and "@knowledge" not in comment_body and "/knowledge" not in comment_body.lower():
-        print("No @Knowledge or /knowledge mention found. Skipping.")
+    if not is_bot_triggered(comment_body):
+        print("No @Knowledge or /knowledge trigger found. Skipping.")
         return False
 
     tracer = ExecutionTracer(owner, repo, issue_number, comment_author)
     print(f"🤖 Processing Knowledge context request from @{comment_author} on {owner}/{repo} #{issue_number}...")
 
-    is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
-    pr_num = issue_number if is_pr_target else None
-    issue_num = issue_number if not is_pr_target else None
+    success = False
+    result: Dict[str, Any] = {}
+    try:
+        is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
+        if not is_pr_target and access_token:
+            pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
+            if pr_check and "id" in pr_check:
+                is_pr_target = True
 
-    result = KnowledgeAgent.generate_answer(
-        token=access_token,
-        owner=owner,
-        repo=repo,
-        query=comment_body,
-        author=comment_author,
-        issue_number=issue_num,
-        pr_number=pr_num
-    )
+        pr_num = issue_number if is_pr_target else None
+        issue_num = issue_number if not is_pr_target else None
 
-    answer_text = result.get("answer", "")
-    engine_used = result.get("engine", "Mistral AI Context Layer")
+        result = KnowledgeAgent.generate_answer(
+            token=access_token,
+            owner=owner,
+            repo=repo,
+            query=comment_body,
+            author=comment_author,
+            issue_number=issue_num,
+            pr_number=pr_num
+        )
 
-    formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
+        answer_text = result.get("answer", "")
+        engine_used = result.get("engine", "Mistral AI Context Layer")
 
-    print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
-    success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
+        formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
 
-    if success:
-        print("🎉 Successfully posted response to GitHub!")
-    else:
-        print("❌ Failed to post response to GitHub.")
+        print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
+        success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
 
-    tracer.finish(success, result)
-    return success
+        if success:
+            print("🎉 Successfully posted response to GitHub!")
+        else:
+            print("❌ Failed to post response to GitHub.")
+
+        return success
+    finally:
+        tracer.finish(success, result)
 
 
 
