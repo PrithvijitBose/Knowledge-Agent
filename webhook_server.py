@@ -110,8 +110,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     owner = repository.get("owner", {}).get("login")
     repo = repository.get("name")
 
-    # Get access token from env or installation token
-    token = os.getenv("GITHUB_TOKEN") or config.GITHUB_CLIENT_SECRET
+    token = os.getenv("GITHUB_TOKEN")
 
     if not token or not owner or not repo or not issue_number:
         raise HTTPException(status_code=500, detail="Missing repository context or GitHub token")
