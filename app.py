@@ -1,3 +1,4 @@
+import html
 import streamlit as st
 import config
 import github_auth
@@ -163,8 +164,23 @@ def render_sidebar():
             
             st.markdown("---")
             st.metric(label="Total Repositories", value=len(st.session_state.repos))
-            st.markdown(f"**LLM Engine:** `{config.MISTRAL_MODEL if config.is_mistral_configured() else 'Fallback Summarizer'}`")
             
+            st.markdown("---")
+            st.markdown("#### 🧠 AI Provider")
+            all_providers = config.list_providers()
+            provider_options = list(all_providers.keys())
+            current_provider = st.session_state.get("selected_provider", "mistral")
+            provider_idx = provider_options.index(current_provider) if current_provider in provider_options else 0
+            selected_provider = st.selectbox(
+                "Active LLM Engine",
+                provider_options,
+                index=provider_idx,
+                format_func=lambda p: f"{p.capitalize()} {'(Configured)' if all_providers[p]['configured'] else '(Missing Key)'}"
+            )
+            st.session_state.selected_provider = selected_provider
+            active_info = all_providers.get(selected_provider, {})
+            st.caption(f"Model: `{active_info.get('model', 'default')}`")
+
             st.markdown("---")
             if st.button("🔌 Disconnect GitHub", use_container_width=True, type="secondary"):
                 st.session_state.access_token = None
@@ -180,8 +196,24 @@ def render_sidebar():
             </div>
             """, unsafe_allow_html=True)
             st.markdown("---")
+            st.markdown("#### 🧠 AI Provider")
+            all_providers = config.list_providers()
+            provider_options = list(all_providers.keys())
+            current_provider = st.session_state.get("selected_provider", "mistral")
+            provider_idx = provider_options.index(current_provider) if current_provider in provider_options else 0
+            selected_provider = st.selectbox(
+                "Active LLM Engine",
+                provider_options,
+                index=provider_idx,
+                format_func=lambda p: f"{p.capitalize()} {'(Configured)' if all_providers[p]['configured'] else '(Missing Key)'}"
+            )
+            st.session_state.selected_provider = selected_provider
+            active_info = all_providers.get(selected_provider, {})
+            st.caption(f"Model: `{active_info.get('model', 'default')}`")
+
+            st.markdown("---")
             st.info("💡 GitHub OAuth configured" if config.is_github_configured() else "⚠️ Requires .env OAuth keys")
-            st.info(f"🤖 Mistral AI active ({config.MISTRAL_MODEL})" if config.is_mistral_configured() else "💡 Mistral API key optional in .env")
+
 
 
 def render_workflow_diagram():
@@ -366,12 +398,13 @@ def main():
                         
                 # Display Selected Issue Details
                 st.markdown("---")
-                st.markdown(f"#### 📌 Issue #{selected_issue.get('number')}: {selected_issue.get('title')}")
-                st.caption(f"Posted by **@{selected_issue.get('user', {}).get('login')}**")
+                st.markdown(f"#### 📌 Issue #{selected_issue.get('number')}: {html.escape(str(selected_issue.get('title') or ''))}")
+                st.caption(f"Posted by **@{html.escape(str(selected_issue.get('user', {}).get('login') or ''))}**")
                 
+                escaped_issue_body = html.escape(str(selected_issue.get('body') or '*No issue body content.*')).replace('\n', '<br>')
                 st.markdown(f"""
                 <div style="background: rgba(30, 41, 59, 0.5); border-left: 4px solid #818cf8; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                    {selected_issue.get('body') or '*No issue body content.*'}
+                    {escaped_issue_body}
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -385,8 +418,8 @@ def main():
                     }]
                     
                 for c in comments:
-                    author = c.get('user', {}).get('login')
-                    body = c.get('body')
+                    author = html.escape(str(c.get('user', {}).get('login') or ''))
+                    body = html.escape(str(c.get('body') or '')).replace('\n', '<br>')
                     st.markdown(f"""
                     <div class="comment-box">
                         <div class="comment-author">@{author}</div>
@@ -406,14 +439,16 @@ def main():
                     trigger_btn = st.button("🚀 Generate Engineering Handoff (Context Expansion V1)", type="primary", use_container_width=True)
                     
                 if trigger_btn:
-                    with st.spinner(f"🤖 Context Engine collecting PRs, comments & calling {config.MISTRAL_MODEL}..."):
+                    prov = st.session_state.get("selected_provider", "mistral")
+                    with st.spinner(f"🤖 Context Engine collecting PRs, comments & calling {prov.capitalize()} AI..."):
                         result = knowledge_agent.generate_knowledge_answer(
                             st.session_state.access_token,
                             owner,
                             repo,
                             selected_issue,
                             comments,
-                            custom_query=custom_q
+                            custom_query=custom_q,
+                            provider_name=prov
                         )
                         st.session_state.last_answer = result
                         
