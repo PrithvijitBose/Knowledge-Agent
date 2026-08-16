@@ -48,7 +48,96 @@ def verify_signature(payload_bytes: bytes, signature_header: str | None) -> bool
     return hmac.compare_digest(expected_header, signature_header)
 
 
+def read_root():
+    return {
+        "status": "online",
+        "app": "Knowledge GitHub Bot",
+        "mistral_model": config.MISTRAL_MODEL,
+        "mistral_active": config.is_mistral_configured()
+    }
+
+
+async def github_webhook(request: Request, background_tasks: BackgroundTasks):
+    """
+    GitHub Webhook listener endpoint (event: issue_comment).
+    When someone posts '@Knowledge <question>' or '/knowledge <question>' on GitHub, GitHub pings this endpoint.
+    """
+    if hasattr(request, "body"):
+        body_bytes = await request.body() if callable(request.body) else request.body
+    else:
+        body_bytes = b""
+
+    headers = getattr(request, "headers", {})
+    signature_header = headers.get("X-Hub-Signature-256")
+
+    # Verify webhook signature if secret is configured
+    if os.getenv("GITHUB_WEBHOOK_SECRET") or GITHUB_WEBHOOK_SECRET:
+        if not verify_signature(body_bytes, signature_header):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature (X-Hub-Signature-256 mismatch)")
+
+    event_type = headers.get("X-GitHub-Event")
+
+    # We listen for issue_comment events
+    if event_type != "issue_comment":
+        return {"status": "ignored", "reason": f"Event type '{event_type}' not handled"}
+
+    try:
+        payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {e}")
+
+    action = payload.get("action")
+    if action != "created":
+        return {"status": "ignored", "reason": f"Action '{action}' not handled"}
+
+    sender = payload.get("sender", {})
+    comment = payload.get("comment", {})
+    comment_user = comment.get("user", {})
+    if sender.get("type") == "Bot" or comment_user.get("type") == "Bot":
+        return {"status": "ignored", "reason": "Comment created by a Bot account"}
+
+    body = comment.get("body", "")
+    author = comment_user.get("login", "")
+
+    # Check if @Knowledge or /knowledge is mentioned with a canonical token
+    if not knowledge_engine.is_bot_triggered(body):
+        return {"status": "ignored", "reason": "No @Knowledge or /knowledge trigger in comment body"}
+
+    issue = payload.get("issue", {})
+    issue_number = issue.get("number")
+
+    repository = payload.get("repository", {})
+    owner = repository.get("owner", {}).get("login")
+    repo = repository.get("name")
+
+    token = os.getenv("GITHUB_TOKEN")
+
+    if not token or not owner or not repo or not issue_number:
+        raise HTTPException(status_code=500, detail="Missing repository context or GitHub token")
+
+    print(f"📥 Received Webhook from GitHub: @{author} mentioned @Knowledge on {owner}/{repo} Issue #{issue_number}")
+
+    # Process headlessly in background task
+    background_tasks.add_task(
+        bot.process_github_comment,
+        access_token=token,
+        owner=owner,
+        repo=repo,
+        issue_number=issue_number,
+        comment_body=body,
+        comment_author=author
+    )
+
+    return {
+        "status": "processing",
+        "message": f"Triggered Knowledge bot for {owner}/{repo} Issue #{issue_number}"
+    }
+
+
 if app is not None:
+    app.add_api_route("/", read_root, methods=["GET"])
+    app.add_api_route("/webhook", github_webhook, methods=["POST"])
+
     @app.get("/")
     def read_root():
         return {

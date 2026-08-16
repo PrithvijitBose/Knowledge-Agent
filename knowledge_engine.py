@@ -830,7 +830,73 @@ class KnowledgeAgent:
 
 
 # =====================================================================
-# 7. HEADLESS CLI BOT ENTRYPOINT
+# 7. EXECUTION TRACER & STEP SUMMARY
+# =====================================================================
+
+
+class ExecutionTracer:
+    """Records execution metrics, latencies, and writes formatted GitHub Step Summaries."""
+
+    def __init__(self, owner: str, repo: str, issue_number: int, author: str):
+        import time
+        self._time = time
+        self.owner = owner
+        self.repo = repo
+        self.issue_number = issue_number
+        self.author = author
+        self.start_time = time.time()
+        self.intent: str = "UNKNOWN"
+        self.files_read: List[str] = []
+        self.engine: str = "Unknown"
+        self.success: bool = False
+
+    def finish(self, success: bool, result: Dict[str, Any]):
+        self.success = success
+        self.intent = result.get("intent", self.intent)
+        self.files_read = result.get("files_read", self.files_read)
+        self.engine = result.get("engine", self.engine)
+        self.write_step_summary()
+
+    def generate_markdown_summary(self) -> str:
+        total_time = round(self._time.time() - self.start_time, 2)
+        status_badge = "✅ **Success**" if self.success else "❌ **Failed**"
+
+        md = [
+            f"## 🧠 Knowledge Agent Execution Summary",
+            f"",
+            f"| Metric | Value |",
+            f"| :--- | :--- |",
+            f"| **Target** | `{self.owner}/{self.repo}#{self.issue_number}` |",
+            f"| **Trigger Author** | `@{self.author}` |",
+            f"| **Status** | {status_badge} |",
+            f"| **Detected Intent** | `{self.intent}` |",
+            f"| **AI Engine** | `{self.engine}` |",
+            f"| **Total Elapsed Time** | `{total_time}s` |",
+            f"| **Evidence Files Read** | `{len(self.files_read)} files` |",
+            f"",
+        ]
+        if self.files_read:
+            md.append("### 📁 Evaluated Files")
+            for f in sorted(self.files_read):
+                md.append(f"- `{f}`")
+            md.append("")
+
+        return "\n".join(md)
+
+    def write_step_summary(self):
+        summary_path = os.getenv("GITHUB_STEP_SUMMARY")
+        if not summary_path:
+            return
+        try:
+            content = self.generate_markdown_summary()
+            with open(summary_path, "a", encoding="utf-8") as f:
+                f.write(content + "\n")
+        except Exception as e:
+            print(f"Failed to write GITHUB_STEP_SUMMARY: {e}")
+
+
+# =====================================================================
+# 8. HEADLESS CLI BOT ENTRYPOINT
 # =====================================================================
 
 def is_bot_triggered(comment_body: str) -> bool:
@@ -856,43 +922,49 @@ def process_github_comment(
         print("No @Knowledge or /knowledge trigger found. Skipping.")
         return False
 
+
+    tracer = ExecutionTracer(owner, repo, issue_number, comment_author)
     print(f"🤖 Processing Knowledge context request from @{comment_author} on {owner}/{repo} #{issue_number}...")
 
-    is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
-    if not is_pr_target and access_token:
-        # Check if the target number is a pull request on GitHub
-        pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
-        if pr_check and "id" in pr_check:
-            is_pr_target = True
+    success = False
+    result: Dict[str, Any] = {}
+    try:
+        is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
+        if not is_pr_target and access_token:
+            pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
+            if pr_check and "id" in pr_check:
+                is_pr_target = True
 
-    pr_num = issue_number if is_pr_target else None
-    issue_num = issue_number if not is_pr_target else None
+        pr_num = issue_number if is_pr_target else None
+        issue_num = issue_number if not is_pr_target else None
 
+        result = KnowledgeAgent.generate_answer(
+            token=access_token,
+            owner=owner,
+            repo=repo,
+            query=comment_body,
+            author=comment_author,
+            issue_number=issue_num,
+            pr_number=pr_num
+        )
 
-    result = KnowledgeAgent.generate_answer(
-        token=access_token,
-        owner=owner,
-        repo=repo,
-        query=comment_body,
-        author=comment_author,
-        issue_number=issue_num,
-        pr_number=pr_num
-    )
+        answer_text = result.get("answer", "")
+        engine_used = result.get("engine", "Mistral AI Context Layer")
 
-    answer_text = result.get("answer", "")
-    engine_used = result.get("engine", "Mistral AI Context Layer")
+        formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
 
-    formatted_reply = f"{answer_text}\n\n---\n*🧠 Answered by Knowledge Engineering Context Layer ({engine_used})*"
+        print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
+        success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
 
-    print(f"💬 Posting reply back to GitHub {owner}/{repo} #{issue_number}...")
-    success = GitHubClient.post_issue_comment(access_token, owner, repo, issue_number, formatted_reply)
+        if success:
+            print("🎉 Successfully posted response to GitHub!")
+        else:
+            print("❌ Failed to post response to GitHub.")
 
-    if success:
-        print("🎉 Successfully posted response to GitHub!")
-    else:
-        print("❌ Failed to post response to GitHub.")
+        return success
+    finally:
+        tracer.finish(success, result)
 
-    return success
 
 
 if __name__ == "__main__":
