@@ -38,9 +38,10 @@ class TestCitationsAndPermalinks(unittest.TestCase):
         self.assertEqual(sha, "9f830a6c9876543210fedcba9876543210abcdef")
 
     @patch("builtins.print")
+    @patch.object(GitHubClient, "fetch_pull_request", return_value=None)
     @patch.object(GitHubClient, "post_issue_comment", return_value=True)
     @patch.object(KnowledgeAgent, "generate_answer")
-    def test_process_comment_includes_citations(self, mock_gen, mock_post, mock_print):
+    def test_process_comment_includes_citations(self, mock_gen, mock_post, mock_fetch_pr, mock_print):
         mock_gen.return_value = {
             "answer": "Here is the answer.",
             "citations": "\n\n### 📚 Referenced Files & Citations\n- [`auth.py`](https://github.com/owner/repo/blob/sha/auth.py)",
