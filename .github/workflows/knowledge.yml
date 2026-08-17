@@ -13,9 +13,6 @@ permissions:
 
 jobs:
   knowledge_bot:
-
-    if: (contains(github.event.comment.body, '@Knowledge') || contains(github.event.comment.body, '@knowledge') || contains(github.event.comment.body, '/knowledge') || contains(github.event.comment.body, '/Knowledge')) && github.event.comment.user.type != 'Bot'
-    if: (contains(github.event.comment.body, '@Knowledge') || contains(github.event.comment.body, '@knowledge')) && github.event.comment.user.type != 'Bot'
     if: (contains(github.event.comment.body, '@Knowledge') || contains(github.event.comment.body, '@knowledge') || contains(github.event.comment.body, '/knowledge') || contains(github.event.comment.body, '/Knowledge')) && github.event.comment.user.type != 'Bot'
     runs-on: ubuntu-latest
 
@@ -42,7 +39,6 @@ jobs:
           REPO_OWNER: ${{ github.repository_owner }}
           REPO_NAME: ${{ github.event.repository.name }}
           ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
         run: |
           python knowledge_engine.py \
             --owner "$REPO_OWNER" \
