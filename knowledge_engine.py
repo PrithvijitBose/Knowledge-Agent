@@ -203,10 +203,17 @@ class GitHubClient:
 
 
     @staticmethod
-    def fetch_file_content(token: str, owner: str, repo: str, file_path: str) -> Optional[str]:
+    def fetch_file_content(
+        token: str, owner: str, repo: str, file_path: str, ref: Optional[str] = None
+    ) -> Optional[str]:
         try:
+            params = {"ref": ref} if ref else None
             with httpx.Client(timeout=10.0) as client:
-                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}", headers=GitHubClient._get_headers(token))
+                res = client.get(
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}",
+                    headers=GitHubClient._get_headers(token),
+                    params=params,
+                )
                 res.raise_for_status()
                 data = res.json()
                 if "content" in data and data.get("encoding") == "base64":
@@ -293,14 +300,25 @@ class RelationshipExtractor:
             r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
             r'pull\/(\d+)'
         ]
-        numbers = set()
+        # Position-ordered, not numerically sorted: callers that take index 0
+        # as "the first referenced PR" (intent classification, the bidirectional
+        # evidence chain) mean the first one mentioned in the text, and
+        # "Fixes #43; Closes #12" must resolve to #43, not the lower number.
+        matches: List[tuple] = []
         for pat in patterns:
-            for match in re.findall(pat, text, re.IGNORECASE):
+            for m in re.finditer(pat, text, re.IGNORECASE):
                 try:
-                    numbers.add(int(match))
+                    matches.append((m.start(), int(m.group(1))))
                 except ValueError:
                     pass
-        return sorted(list(numbers))
+        matches.sort(key=lambda pair: pair[0])
+        seen = set()
+        ordered: List[int] = []
+        for _, num in matches:
+            if num not in seen:
+                seen.add(num)
+                ordered.append(num)
+        return ordered
 
     @staticmethod
     def extract_referenced_issues(text: str) -> List[int]:
@@ -311,14 +329,22 @@ class RelationshipExtractor:
             r'github\.com\/[^\/]+\/[^\/]+\/issues\/(\d+)',
             r'issues\/(\d+)'
         ]
-        numbers = set()
+        # Same position-ordered contract as extract_referenced_prs.
+        matches: List[tuple] = []
         for pat in patterns:
-            for match in re.findall(pat, text, re.IGNORECASE):
+            for m in re.finditer(pat, text, re.IGNORECASE):
                 try:
-                    numbers.add(int(match))
+                    matches.append((m.start(), int(m.group(1))))
                 except ValueError:
                     pass
-        return sorted(list(numbers))
+        matches.sort(key=lambda pair: pair[0])
+        seen = set()
+        ordered: List[int] = []
+        for _, num in matches:
+            if num not in seen:
+                seen.add(num)
+                ordered.append(num)
+        return ordered
 
     @staticmethod
     def extract_referenced_files(text: str) -> List[str]:
@@ -583,12 +609,18 @@ class ContextRetriever:
                 linked_pr = GitHubClient.fetch_pull_request(token, owner, repo, ref_prs[0])
                 if linked_pr:
                     evidence["linked_pr"] = linked_pr
+                    # The PR's own branch, not the repo's default branch --
+                    # fetching without a ref would show whatever main
+                    # currently has, not what this PR actually changed.
+                    pr_head_sha = (linked_pr.get("head") or {}).get("sha")
                     linked_pr_files = GitHubClient.fetch_pr_files(token, owner, repo, ref_prs[0])
                     evidence["linked_pr_files"] = linked_pr_files or []
                     for f in (linked_pr_files or [])[:5]:
                         filename = f.get("filename")
                         if filename and filename not in fetched_files:
-                            content = GitHubClient.fetch_file_content(token, owner, repo, filename)
+                            content = GitHubClient.fetch_file_content(
+                                token, owner, repo, filename, ref=pr_head_sha
+                            )
                             if content:
                                 fetched_files[filename] = content[:2500]
 

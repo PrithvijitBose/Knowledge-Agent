@@ -16,6 +16,31 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
         issues = RelationshipExtractor.extract_referenced_issues(text)
         self.assertEqual(issues, [43, 45, 50])
 
+    def test_relationship_extractor_prs_preserves_mention_order_not_numeric_order(self):
+        """'Fixes #43; Closes #12' must resolve #43 first -- callers that
+        take index 0 mean 'the one mentioned first', not 'the lowest
+        number'."""
+        text = "PR #12 needs review, but the real fix landed in PR #43 first."
+        prs = RelationshipExtractor.extract_referenced_prs(text)
+        self.assertEqual(prs, [12, 43])  # #12 is textually first here
+
+        text2 = "Fixes the issue via PR #43; also touches PR #12 as a side effect."
+        prs2 = RelationshipExtractor.extract_referenced_prs(text2)
+        self.assertEqual(prs2, [43, 12])  # #43 is textually first here
+
+    def test_relationship_extractor_issues_preserves_mention_order_not_numeric_order(self):
+        text = "Fixes #43; closes #12 as well."
+        issues = RelationshipExtractor.extract_referenced_issues(text)
+        self.assertEqual(issues, [43, 12])
+
+    def test_relationship_extractor_dedupes_across_patterns_keeping_first_position(self):
+        """The same PR can match more than one pattern (a bare '#82' mention
+        and a full github.com/.../pull/82 URL later) -- must not appear twice,
+        and must keep the position of whichever mention came first."""
+        text = "See PR #82 for context: https://github.com/owner/repo/pull/82"
+        prs = RelationshipExtractor.extract_referenced_prs(text)
+        self.assertEqual(prs, [82])
+
     def test_relationship_extractor_files(self):
         text = "Check config.py and src/auth.py for details."
         files = RelationshipExtractor.extract_referenced_files(text)
