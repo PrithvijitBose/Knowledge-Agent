@@ -78,6 +78,42 @@ class GitHubClient:
         return headers
 
     @staticmethod
+    def _get_paginated(
+        url: str,
+        token: str,
+        label: str,
+        *,
+        per_page: int = 100,
+        max_pages: int = 5,
+        extra_params: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Walks GitHub's page-based pagination for one endpoint.
+
+        Bounded at max_pages (default 5 x 100 = 500 items) so a genuinely
+        huge thread or issue list can't turn one request into an unbounded
+        crawl -- this collects what's actually relevant, not the entire
+        history.
+        """
+        items: List[Dict[str, Any]] = []
+        base_params = dict(extra_params or {})
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                for page in range(1, max_pages + 1):
+                    params = {**base_params, "per_page": per_page, "page": page}
+                    res = client.get(url, headers=GitHubClient._get_headers(token), params=params)
+                    if res.status_code != 200:
+                        break
+                    batch = res.json()
+                    if not batch:
+                        break
+                    items.extend(batch)
+                    if len(batch) < per_page:
+                        break  # last page
+        except Exception as e:
+            print(f"GitHub API Error ({label}): {e}")
+        return items
+
+    @staticmethod
     def fetch_user(token: str) -> Optional[Dict[str, Any]]:
         try:
             with httpx.Client(timeout=10.0) as client:
@@ -113,15 +149,14 @@ class GitHubClient:
 
     @staticmethod
     def fetch_repo_issues(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
-        params = {"state": "all", "sort": "updated", "direction": "desc", "per_page": 30}
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues", headers=GitHubClient._get_headers(token), params=params)
-                res.raise_for_status()
-                return [i for i in res.json() if "pull_request" not in i]
-        except Exception as e:
-            print(f"GitHub API Error (fetch_repo_issues): {e}")
-            return []
+        items = GitHubClient._get_paginated(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues",
+            token,
+            "fetch_repo_issues",
+            max_pages=3,
+            extra_params={"state": "all", "sort": "updated", "direction": "desc"},
+        )
+        return [i for i in items if "pull_request" not in i]
 
     @staticmethod
     def fetch_pull_request(token: str, owner: str, repo: str, pr_number: int) -> Optional[Dict[str, Any]]:
@@ -147,14 +182,11 @@ class GitHubClient:
 
     @staticmethod
     def fetch_issue_comments(token: str, owner: str, repo: str, issue_number: int) -> List[Dict[str, Any]]:
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                res = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}/comments", headers=GitHubClient._get_headers(token))
-                res.raise_for_status()
-                return res.json()
-        except Exception as e:
-            print(f"GitHub API Error (fetch_issue_comments #{issue_number}): {e}")
-            return []
+        return GitHubClient._get_paginated(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}/comments",
+            token,
+            f"fetch_issue_comments #{issue_number}",
+        )
 
     @staticmethod
     def fetch_pr_diff(token: str, owner: str, repo: str, pr_number: int) -> Optional[str]:
@@ -173,32 +205,24 @@ class GitHubClient:
     @staticmethod
     def fetch_pr_review_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
         """Fetches inline review comments on code diffs."""
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                res = client.get(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments",
-                    headers=GitHubClient._get_headers(token)
-                )
-                if res.status_code == 200:
-                    return res.json()
-        except Exception as e:
-            print(f"GitHub API Error (fetch_pr_review_comments #{pr_number}): {e}")
-        return []
+        return GitHubClient._get_paginated(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+            token,
+            f"fetch_pr_review_comments #{pr_number}",
+        )
 
     @staticmethod
     def fetch_pr_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
-        comments = []
-        try:
-            with httpx.Client(timeout=10.0) as client:
-                headers = GitHubClient._get_headers(token)
-                res_issue = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{pr_number}/comments", headers=headers)
-                if res_issue.status_code == 200:
-                    comments.extend(res_issue.json())
-                res_pr = client.get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments", headers=headers)
-                if res_pr.status_code == 200:
-                    comments.extend(res_pr.json())
-        except Exception as e:
-            print(f"GitHub API Error (fetch_pr_comments #{pr_number}): {e}")
+        comments = GitHubClient._get_paginated(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{pr_number}/comments",
+            token,
+            f"fetch_pr_comments(issue) #{pr_number}",
+        )
+        comments += GitHubClient._get_paginated(
+            f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments",
+            token,
+            f"fetch_pr_comments(review) #{pr_number}",
+        )
         return comments
 
 
@@ -703,9 +727,9 @@ class ContextExplainer:
             if evidence.get("diff"):
                 prompt += f"\n\n--- UNIFIED DIFF (Truncated) ---\n```diff\n{evidence['diff']}\n```\n"
             if evidence.get("review_comments"):
-                prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][:5]])
+                prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][-5:]])
             if evidence.get("pr_comments"):
-                prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
+                prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][-5:]])
 
 
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
@@ -722,7 +746,7 @@ class ContextExplainer:
             iss = evidence["issue"]
             prompt += f"--- ISSUE #{iss.get('number')} ---\nTitle: {iss.get('title')}\nBody:\n{iss.get('body')}\n"
             if evidence.get("comments"):
-                prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][:5]])
+                prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][-5:]])
 
         if fetched_files:
             prompt += "\n--- EVIDENCE FILES ---\n"
