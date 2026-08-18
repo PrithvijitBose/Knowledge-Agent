@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional, List
 import httpx
 from dotenv import load_dotenv
 
+import retry
+
 load_dotenv()
 
 
@@ -78,7 +80,9 @@ class MistralProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                res = retry.request_with_retry(lambda: client.post(url, headers=headers, json=payload))
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 choices = data.get("choices", [])
@@ -121,7 +125,9 @@ class OpenAIProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                res = retry.request_with_retry(lambda: client.post(url, headers=headers, json=payload))
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 choices = data.get("choices", [])
@@ -164,7 +170,9 @@ class AnthropicProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                res = retry.request_with_retry(lambda: client.post(url, headers=headers, json=payload))
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 contents = data.get("content", [])
@@ -208,7 +216,9 @@ class GeminiProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                res = retry.request_with_retry(lambda: client.post(url, headers=headers, json=payload))
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 candidates = data.get("candidates", [])
@@ -252,7 +262,9 @@ class GroqProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                res = retry.request_with_retry(lambda: client.post(url, headers=headers, json=payload))
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 choices = data.get("choices", [])
@@ -291,7 +303,9 @@ class OllamaProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=60.0) as client:
-                res = client.post(url, json=payload)
+                res = retry.request_with_retry(lambda: client.post(url, json=payload))
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 message = data.get("message", {})
