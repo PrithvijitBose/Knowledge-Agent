@@ -89,13 +89,56 @@ class TestRequestWithRetry(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         self.assertEqual(request_fn.call_count, 2)
 
-    def test_retry_delay_caps_at_max_retry_delay(self):
+    def test_local_backoff_caps_at_max_local_backoff(self):
+        """No Retry-After at all: this is OUR exponential backoff, so the
+        small local cap applies."""
+        sleeps = []
+        request_fn = MagicMock(side_effect=[_response(503), _response(200)])
+        retry.request_with_retry(request_fn, base_delay=1000.0, sleep_fn=sleeps.append)
+        self.assertEqual(sleeps, [retry.MAX_LOCAL_BACKOFF])
+
+    def test_server_directed_delay_is_honored_past_the_old_20s_cap(self):
+        """A server saying 'wait 120s' must not get truncated to ~20s -- doing
+        that meant retrying against a limit GitHub explicitly asked us to
+        back off from, which risks an actual ban."""
         sleeps = []
         request_fn = MagicMock(
-            side_effect=[_response(403, headers={"Retry-After": "999"}), _response(200)]
+            side_effect=[_response(403, headers={"Retry-After": "120"}), _response(200)]
         )
         retry.request_with_retry(request_fn, sleep_fn=sleeps.append)
-        self.assertEqual(sleeps, [retry.MAX_RETRY_DELAY])
+        self.assertEqual(sleeps, [120.0])
+
+    def test_server_directed_delay_still_has_a_sanity_ceiling(self):
+        sleeps = []
+        request_fn = MagicMock(
+            side_effect=[_response(403, headers={"Retry-After": "99999"}), _response(200)]
+        )
+        retry.request_with_retry(request_fn, sleep_fn=sleeps.append)
+        self.assertEqual(sleeps, [retry.MAX_SERVER_DELAY])
+
+    def test_retry_after_http_date_is_parsed(self):
+        import email.utils
+        import time
+        from unittest.mock import patch as _patch
+
+        future = email.utils.format_datetime(
+            email.utils.parsedate_to_datetime(email.utils.formatdate(time.time() + 30, usegmt=True))
+        )
+        sleeps = []
+        request_fn = MagicMock(
+            side_effect=[_response(429, headers={"Retry-After": future}), _response(200)]
+        )
+        retry.request_with_retry(request_fn, sleep_fn=sleeps.append)
+        self.assertEqual(len(sleeps), 1)
+        self.assertAlmostEqual(sleeps[0], 30.0, delta=2.0)
+
+    def test_retry_after_garbage_falls_back_to_local_backoff(self):
+        sleeps = []
+        request_fn = MagicMock(
+            side_effect=[_response(429, headers={"Retry-After": "not-a-date-or-number"}), _response(200)]
+        )
+        retry.request_with_retry(request_fn, base_delay=1.0, sleep_fn=sleeps.append)
+        self.assertEqual(sleeps, [1.0])
 
     def test_exponential_backoff_used_when_no_retry_after_header(self):
         sleeps = []
@@ -115,6 +158,50 @@ class TestRequestWithRetry(unittest.TestCase):
         sleeps = []
         request_fn = MagicMock(side_effect=[httpx.TimeoutException("slow"), _response(200)])
         result = retry.request_with_retry(request_fn, sleep_fn=sleeps.append)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(request_fn.call_count, 2)
+
+    def test_write_error_is_retried_like_other_connection_errors(self):
+        """httpx.WriteError is a NetworkError subclass, same family as
+        ConnectError/ReadError -- it was missing from the original catch
+        tuple and silently bypassed retry entirely."""
+        sleeps = []
+        request_fn = MagicMock(side_effect=[httpx.WriteError("boom"), _response(200)])
+        result = retry.request_with_retry(request_fn, sleep_fn=sleeps.append)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(request_fn.call_count, 2)
+
+    def test_close_error_is_retried_like_other_connection_errors(self):
+        sleeps = []
+        request_fn = MagicMock(side_effect=[httpx.CloseError("boom"), _response(200)])
+        result = retry.request_with_retry(request_fn, sleep_fn=sleeps.append)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(request_fn.call_count, 2)
+
+    def test_connection_error_not_retried_when_replay_is_unsafe(self):
+        """A POST that creates something (a comment, an LLM completion) must
+        not be retried on a connection-level exception -- we can't tell
+        whether the server already processed it before the connection died,
+        and retrying blind risks a duplicate."""
+        sleeps = []
+        request_fn = MagicMock(side_effect=httpx.TimeoutException("slow"))
+        result = retry.request_with_retry(
+            request_fn, sleep_fn=sleeps.append, retry_on_connection_error=False
+        )
+        self.assertIsNone(result)
+        request_fn.assert_called_once()
+        self.assertEqual(sleeps, [])
+
+    def test_definite_rejection_still_retried_when_replay_is_unsafe(self):
+        """retry_on_connection_error=False only gates the ambiguous-outcome
+        case. A 429/5xx is a definite 'the server rejected this, nothing was
+        created' response, so it's always safe to retry regardless of
+        method."""
+        sleeps = []
+        request_fn = MagicMock(side_effect=[_response(429), _response(200)])
+        result = retry.request_with_retry(
+            request_fn, sleep_fn=sleeps.append, retry_on_connection_error=False
+        )
         self.assertEqual(result.status_code, 200)
         self.assertEqual(request_fn.call_count, 2)
 

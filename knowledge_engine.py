@@ -108,8 +108,13 @@ class GitHubClient:
     ) -> Optional[httpx.Response]:
         headers = GitHubClient._get_headers(token)
         with httpx.Client(timeout=timeout) as client:
+            # A dropped connection here doesn't tell us whether GitHub already
+            # created the comment before it dropped -- retrying blind risks
+            # posting it twice. Only retry on a definite rejection response
+            # (5xx / rate limit), never on a connection-level exception.
             return retry.request_with_retry(
-                lambda: client.post(url, headers=headers, json=json_body)
+                lambda: client.post(url, headers=headers, json=json_body),
+                retry_on_connection_error=False,
             )
 
     @staticmethod

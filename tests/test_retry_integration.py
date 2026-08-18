@@ -64,6 +64,17 @@ class TestGitHubClientRetryWiring(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(mock_post.call_count, 2)
 
+    @patch.object(httpx.Client, "post")
+    def test_post_issue_comment_does_not_retry_on_connection_error(self, mock_post):
+        """A dropped connection after GitHub may have already created the
+        comment must not trigger a blind retry -- that's how a duplicate
+        comment would happen. Confirms post_issue_comment actually wires
+        retry_on_connection_error=False through to the shared helper."""
+        mock_post.side_effect = httpx.TimeoutException("slow")
+        ok = GitHubClient.post_issue_comment("token", "owner", "repo", 5, "hello")
+        self.assertFalse(ok)
+        mock_post.assert_called_once()
+
 
 class TestProviderRetryWiring(unittest.TestCase):
 
@@ -88,6 +99,18 @@ class TestProviderRetryWiring(unittest.TestCase):
             provider = providers.MistralProvider()
             result = provider.generate("system", "user")
         self.assertEqual(result, "")
+
+    @patch.object(httpx.Client, "post")
+    def test_mistral_provider_does_not_retry_on_connection_error(self, mock_post):
+        """A generation call costs real money and isn't idempotent -- a
+        dropped connection must not trigger a blind retry that could double
+        the bill or produce a second, inconsistent generation."""
+        mock_post.side_effect = httpx.TimeoutException("slow")
+        with patch.dict("os.environ", {"MISTRAL_API_KEY": "key123"}):
+            provider = providers.MistralProvider()
+            result = provider.generate("system", "user")
+        self.assertEqual(result, "")
+        mock_post.assert_called_once()
 
 
 if __name__ == "__main__":
