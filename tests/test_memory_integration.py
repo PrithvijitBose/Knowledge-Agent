@@ -138,6 +138,26 @@ class TestGenerateAnswerMemoryWiring(unittest.TestCase):
         self.assertIn("PRIOR INVESTIGATION", prompt)
         self.assertIn("never as something already established", prompt)
 
+    @patch.object(GitHubClient, "fetch_issue", return_value=None)
+    @patch.object(GitHubClient, "fetch_issue_comments", return_value=[])
+    @patch.object(GitHubClient, "fetch_file_content", return_value=None)
+    @patch.object(KnowledgeAgent, "call_llm", return_value="Some fallback-shaped answer.")
+    @patch("knowledge_engine.is_mistral_configured", return_value=True)
+    def test_failed_issue_fetch_is_not_persisted_as_a_finding(
+        self, mock_cfg, mock_llm, mock_file, mock_comments, mock_issue
+    ):
+        """fetch_issue() returning None still leaves evidence["issue"] set to
+        a synthetic placeholder built from the query text alone -- that must
+        not be mistaken for "the investigation found something" and stored
+        as if it were a grounded prior finding."""
+        store = memory_store.MemoryStore()
+        KnowledgeAgent.generate_answer(
+            token="t", owner="demo", repo="demo-repo",
+            query="@Knowledge what's issue #999 about?", author="Dev", issue_number=999,
+        )
+        entry = store.get("demo", "demo-repo", IntentCategory.ISSUE_UNDERSTANDING, [])
+        self.assertIsNone(entry)
+
 
 if __name__ == "__main__":
     unittest.main()

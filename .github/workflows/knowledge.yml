@@ -31,14 +31,17 @@ jobs:
 
       # Persistent repository memory (#6): the runner's filesystem is thrown
       # away after every job, so restore whatever the most recent previous
-      # run saved. Keyed by run_id (not a fixed key) + save unconditionally
-      # below, because actions/cache skips the save step on an exact key
-      # match -- a fixed key would restore fine but never actually update.
+      # run saved. Keyed by run_id + run_attempt (not a fixed key) + save
+      # unconditionally below, because actions/cache skips the save step on
+      # an exact key match -- a fixed key would restore fine but never
+      # actually update. run_attempt matters too: a manual rerun keeps the
+      # same run_id, so without it a rerun would hit its own previous
+      # attempt's now-immutable cache entry and never save updated memory.
       - name: Restore Knowledge memory cache
         uses: actions/cache/restore@v4
         with:
           path: .knowledge
-          key: knowledge-memory-${{ github.repository }}-${{ github.run_id }}
+          key: knowledge-memory-${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             knowledge-memory-${{ github.repository }}-
 
@@ -66,4 +69,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .knowledge
-          key: knowledge-memory-${{ github.repository }}-${{ github.run_id }}
+          key: knowledge-memory-${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}

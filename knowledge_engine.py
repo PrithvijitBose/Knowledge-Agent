@@ -558,9 +558,17 @@ class ContextRetriever:
                 iss = GitHubClient.fetch_issue(token, owner, repo, target_issue)
                 comments = GitHubClient.fetch_issue_comments(token, owner, repo, target_issue)
                 evidence["issue"] = iss or {"number": target_issue, "title": f"Issue #{target_issue}", "body": query}
+                # iss is None means the fetch failed and evidence["issue"] above
+                # is a synthetic placeholder built from the query text alone --
+                # not repository evidence. Callers that decide whether to
+                # persist a finding (memory_store) must check this, not just
+                # evidence["issue"] truthiness, or a placeholder gets stored
+                # as if it were a grounded prior investigation.
+                evidence["issue_fetch_ok"] = iss is not None
                 evidence["comments"] = comments or []
             else:
                 evidence["issue"] = None
+                evidence["issue_fetch_ok"] = False
                 evidence["comments"] = []
 
             combined_text = query
@@ -839,8 +847,13 @@ class KnowledgeAgent:
 
         # Record this finding for next time. Only worth storing when the
         # investigation actually turned up something -- an empty-evidence
-        # fallback answer isn't a finding worth building on later.
-        if files_read or evidence.get("issue") or evidence.get("pr"):
+        # fallback answer isn't a finding worth building on later. A
+        # synthetic issue placeholder (fetch failed, evidence["issue"] built
+        # from the query text alone) does not count as "found something";
+        # check issue_fetch_ok explicitly rather than evidence["issue"]
+        # truthiness, which the placeholder always satisfies.
+        has_issue_evidence = evidence.get("issue_fetch_ok") is True
+        if files_read or has_issue_evidence or evidence.get("pr"):
             memory.put(
                 owner, repo, intent_info["intent"], intent_info.get("keywords", []),
                 summary=llm_answer, files_read=files_read, commit_sha=evidence.get("commit_sha"),

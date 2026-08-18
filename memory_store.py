@@ -52,16 +52,33 @@ MAX_ENTRIES_PER_REPO = 50
 SUMMARY_MAX_CHARS = 800
 
 
+def _canonicalize_keywords(keywords: List[str]) -> List[str]:
+    """Collapses keyword aliases down to their shortest common form.
+
+    IntentClassifier substring-matches its keyword list against the query,
+    so a query containing "authentication" also always matches "auth" (it's
+    a substring), producing ["auth", "authentication"] -- while a query that
+    only says "auth" produces just ["auth"]. Two related questions ("explain
+    auth" vs "explain authentication") would otherwise land in different
+    memory slots, which defeats the entire point of grouping them. Drop any
+    keyword that itself contains another matched keyword as a substring, so
+    {"auth", "authentication"}, {"auth", "oauth"}, and {"auth"} alone all
+    normalize to the same ["auth"].
+    """
+    unique = sorted(set(k.lower() for k in keywords if k))
+    return [kw for kw in unique if not any(other != kw and other in kw for other in unique)]
+
+
 def topic_key(intent: str, keywords: List[str]) -> str:
     """Groups related questions into the same memory slot.
 
     "Explain authentication" and "how does auth work in this repo" both
     classify to ARCHITECTURE_UNDERSTANDING with keyword "auth", so both
     hash to the same key -- a later related question can find the earlier
-    investigation. Keywords are sorted and deduplicated so ordering in the
-    question never matters.
+    investigation. Keywords are canonicalized, sorted, and deduplicated so
+    ordering and aliasing in the question never matter.
     """
-    normalized = "+".join(sorted(set(k.lower() for k in keywords if k))) or "general"
+    normalized = "+".join(_canonicalize_keywords(keywords)) or "general"
     return f"{intent}::{normalized}"
 
 
@@ -81,9 +98,16 @@ class MemoryStore:
         if not self.path.exists():
             return {}
         try:
-            return json.loads(self.path.read_text(encoding="utf-8"))
+            data = json.loads(self.path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             return {}
+        # json.loads happily accepts `null`, `[]`, or a dict whose values
+        # aren't dicts -- all valid JSON, all the wrong shape. A caller
+        # calling .get() on a list or None crashes generate_answer() outright
+        # instead of degrading to "no memory" the way a missing/corrupt file
+        # already does. Validate the shape here, once, instead of at every
+        # call site.
+        return data if isinstance(data, dict) else {}
 
     def _save(self, data: Dict[str, Any]) -> None:
         try:
@@ -95,8 +119,11 @@ class MemoryStore:
     def get(self, owner: str, repo: str, intent: str, keywords: List[str]) -> Optional[Dict[str, Any]]:
         """Returns the stored entry for this repo/topic, or None on a miss."""
         data = self._load()
-        repo_entries = data.get(f"{owner}/{repo}", {})
-        return repo_entries.get(topic_key(intent, keywords))
+        repo_entries = data.get(f"{owner}/{repo}")
+        if not isinstance(repo_entries, dict):
+            return None
+        entry = repo_entries.get(topic_key(intent, keywords))
+        return entry if isinstance(entry, dict) else None
 
     def put(
         self,
@@ -113,7 +140,11 @@ class MemoryStore:
         if not summary:
             return
         data = self._load()
-        repo_entries = data.setdefault(f"{owner}/{repo}", {})
+        repo_key = f"{owner}/{repo}"
+        repo_entries = data.get(repo_key)
+        if not isinstance(repo_entries, dict):
+            repo_entries = {}
+        data[repo_key] = repo_entries
         repo_entries[topic_key(intent, keywords)] = {
             "summary": summary[:SUMMARY_MAX_CHARS],
             "files_read": files_read,
@@ -129,7 +160,12 @@ class MemoryStore:
         overflow = len(repo_entries) - MAX_ENTRIES_PER_REPO
         if overflow <= 0:
             return
-        oldest_first = sorted(repo_entries.items(), key=lambda kv: kv[1].get("updated_at", ""))
+
+        def _updated_at(item: tuple) -> str:
+            value = item[1]
+            return value.get("updated_at", "") if isinstance(value, dict) else ""
+
+        oldest_first = sorted(repo_entries.items(), key=_updated_at)
         for stale_key, _ in oldest_first[:overflow]:
             repo_entries.pop(stale_key, None)
 
