@@ -1,0 +1,58 @@
+name: Knowledge Agent Context Layer
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+concurrency:
+  group: knowledge-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  knowledge-bot:
+    name: Knowledge Bot Assistant
+    if: >-
+      github.event.comment.user.type != 'Bot' &&
+      github.event.comment.user.login != 'github-actions[bot]' &&
+      (contains(github.event.comment.body, '@Knowledge') ||
+       contains(github.event.comment.body, '@knowledge') ||
+       contains(github.event.comment.body, '/knowledge'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx python-dotenv
+
+      - name: Run Knowledge Context Engine
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || '' }}
+        run: |
+          python knowledge_engine.py \
+            --owner "${{ github.repository_owner }}" \
+            --repo "${{ github.event.repository.name }}" \
+            --issue "${{ github.event.issue.number || github.event.pull_request.number }}" \
+            --comment "${{ github.event.comment.body }}" \
+            --author "${{ github.event.comment.user.login }}"
