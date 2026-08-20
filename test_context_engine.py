@@ -143,6 +143,18 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
         self.assertIn("Mock answer", args[4])
         self.assertIn("Engineering Context Layer", args[4])
 
+    @patch("knowledge_engine.GitHubClient.fetch_pull_request", return_value={"number": 82, "title": "Add OAuth", "body": "Details", "state": "closed", "merged": True, "html_url": "https://github.com/owner/repo/pull/82"})
+    @patch("knowledge_engine.GitHubClient.fetch_pr_files", return_value=[{"filename": "auth.py"}])
+    def test_context_engine_fetch_linked_prs(self, mock_pr_files, mock_pr):
+        import github_auth
+        self.assertTrue(hasattr(github_auth, "fetch_pull_request_files"), "github_auth must export fetch_pull_request_files")
+        from context_engine import ContextEngine
+        res = ContextEngine.fetch_linked_prs("token123", "realowner", "realrepo", [82])
+        self.assertEqual(len(res), 1)
+        self.assertEqual(res[0]["number"], 82)
+        self.assertEqual(res[0]["changed_files"], ["auth.py"])
+        self.assertTrue(res[0]["merged"])
+
 
 if __name__ == "__main__":
     unittest.main()

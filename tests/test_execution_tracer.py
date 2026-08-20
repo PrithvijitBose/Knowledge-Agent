@@ -115,6 +115,7 @@ class TestExecutionTracer(unittest.TestCase):
         mock_req.headers = {"X-GitHub-Event": "issue_comment"}
         
         async def run_test():
+            secret = "test_webhook_secret_key"
             payload = {
                 "action": "created",
                 "comment": {"body": "/knowledge explain how auth works", "user": {"login": "eve", "type": "User"}},
@@ -123,12 +124,16 @@ class TestExecutionTracer(unittest.TestCase):
                 "sender": {"login": "eve", "type": "User"}
             }
             import json
+            import hmac
+            import hashlib
             payload_bytes = json.dumps(payload).encode("utf-8")
+            sig = "sha256=" + hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
+            mock_req.headers = {"X-GitHub-Event": "issue_comment", "X-Hub-Signature-256": sig}
             async def mock_body():
                 return payload_bytes
             mock_req.body = mock_body
             mock_req.json = MagicMock(return_value=payload)
-            with patch.dict(os.environ, {"GITHUB_TOKEN": "mock_token", "GITHUB_WEBHOOK_SECRET": ""}):
+            with patch.dict(os.environ, {"GITHUB_TOKEN": "mock_token", "GITHUB_WEBHOOK_SECRET": secret}):
                 resp = await webhook_server.github_webhook(mock_req, mock_bg)
                 self.assertEqual(resp.get("status"), "processing")
                 mock_bg.add_task.assert_called_once()
