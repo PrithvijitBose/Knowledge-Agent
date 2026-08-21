@@ -205,6 +205,26 @@ class TestRequestWithRetry(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         self.assertEqual(request_fn.call_count, 2)
 
+    def test_retry_after_nan_or_inf_falls_back(self):
+        sleeps = []
+        request_fn = MagicMock(
+            side_effect=[_response(429, headers={"Retry-After": "inf"}), _response(200)]
+        )
+        retry.request_with_retry(request_fn, base_delay=1.0, sleep_fn=sleeps.append)
+        self.assertEqual(sleeps, [1.0])
+
+    def test_rate_limit_reset_nan_or_inf_falls_back(self):
+        sleeps = []
+        request_fn = MagicMock(
+            side_effect=[
+                _response(403, headers={"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "nan"}),
+                _response(200),
+            ]
+        )
+        retry.request_with_retry(request_fn, base_delay=1.0, sleep_fn=sleeps.append)
+        self.assertEqual(sleeps, [1.0])
+
 
 if __name__ == "__main__":
     unittest.main()
+

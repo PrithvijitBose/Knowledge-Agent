@@ -9,6 +9,7 @@ comment.
 """
 
 import email.utils
+import math
 import time
 from typing import Callable, Optional
 
@@ -118,8 +119,6 @@ def _is_rate_limited(response: httpx.Response) -> bool:
 def _retry_after_seconds(response: httpx.Response) -> Optional[float]:
     """Parses Retry-After (delay-seconds or HTTP-date, RFC 9110 10.2.3) or
     falls back to X-RateLimit-Reset (a Unix timestamp)."""
-import math
-
     raw = response.headers.get("Retry-After")
     if raw is not None:
         raw = raw.strip()
@@ -127,8 +126,6 @@ import math
             delay = float(raw)
             if math.isfinite(delay):
                 return delay
-        except ValueError:
-            pass
         except ValueError:
             pass
         try:
@@ -141,7 +138,11 @@ import math
     reset = response.headers.get("X-RateLimit-Reset")
     if reset:
         try:
-            return max(0.0, float(reset) - time.time())
+            reset_val = float(reset)
+            if math.isfinite(reset_val):
+                return max(0.0, reset_val - time.time())
+            return None
         except ValueError:
             return None
     return None
+
