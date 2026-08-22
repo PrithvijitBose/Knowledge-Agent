@@ -17,14 +17,25 @@ class RelationshipExtractor:
             r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
             r'pull\/(\d+)'
         ]
-        numbers = set()
+        # Position-ordered, not numerically sorted: callers that take index 0
+        # as "the first referenced PR" (intent classification, the bidirectional
+        # evidence chain) mean the first one mentioned in the text, and
+        # "Fixes #43; Closes #12" must resolve to #43, not the lower number.
+        matches: List[tuple] = []
         for pat in patterns:
-            for match in re.findall(pat, text, re.IGNORECASE):
+            for m in re.finditer(pat, text, re.IGNORECASE):
                 try:
-                    numbers.add(int(match))
+                    matches.append((m.start(), int(m.group(1))))
                 except ValueError:
                     pass
-        return sorted(list(numbers))
+        matches.sort(key=lambda pair: pair[0])
+        seen = set()
+        ordered: List[int] = []
+        for _, num in matches:
+            if num not in seen:
+                seen.add(num)
+                ordered.append(num)
+        return ordered
 
     @staticmethod
     def extract_referenced_issues(text: str) -> List[int]:
@@ -35,14 +46,22 @@ class RelationshipExtractor:
             r'github\.com\/[^\/]+\/[^\/]+\/issues\/(\d+)',
             r'issues\/(\d+)'
         ]
-        numbers = set()
+        # Same position-ordered contract as extract_referenced_prs.
+        matches: List[tuple] = []
         for pat in patterns:
-            for match in re.findall(pat, text, re.IGNORECASE):
+            for m in re.finditer(pat, text, re.IGNORECASE):
                 try:
-                    numbers.add(int(match))
+                    matches.append((m.start(), int(m.group(1))))
                 except ValueError:
                     pass
-        return sorted(list(numbers))
+        matches.sort(key=lambda pair: pair[0])
+        seen = set()
+        ordered: List[int] = []
+        for _, num in matches:
+            if num not in seen:
+                seen.add(num)
+                ordered.append(num)
+        return ordered
 
     @staticmethod
     def extract_referenced_files(text: str) -> List[str]:
@@ -105,19 +124,36 @@ class ContextRetriever:
                 evidence["changed_files"] = changed_files or []
                 evidence["diff"] = diff[:max_file] if diff else None
 
-                # Fetch content of key changed files
+                # Fetch content of key changed files using PR head sha
+                pr_head_sha = ((pr or {}).get("head") or {}).get("sha")
                 for f in (changed_files or [])[:5]:
                     filename = f.get("filename")
                     if filename and filename not in fetched_files:
-                        content = GitHubClient.fetch_file_content(token, owner, repo, filename)
+                        content = GitHubClient.fetch_file_content(
+                            token, owner, repo, filename, ref=pr_head_sha
+                        )
                         if content:
                             fetched_files[filename] = content[:max_comment]
+
+                # Follow the PR -> Issue relationship: "Fixes #43" in the PR
+                # body/comments means issue #43's own context belongs in the
+                # evidence too, not just the PR's own description.
+                pr_text = f"{(pr or {}).get('body', '')}\n" + "\n".join(
+                    c.get("body", "") for c in (pr_comments or [])
+                )
+                ref_issues = RelationshipExtractor.extract_referenced_issues(pr_text)
+                evidence["referenced_issues"] = ref_issues
+                if ref_issues:
+                    linked_issue = GitHubClient.fetch_issue(token, owner, repo, ref_issues[0])
+                    if linked_issue:
+                        evidence["linked_issue"] = linked_issue
             else:
                 evidence["pr"] = None
                 evidence["pr_comments"] = []
                 evidence["review_comments"] = []
                 evidence["changed_files"] = []
                 evidence["diff"] = None
+                evidence["referenced_issues"] = []
 
         elif intent == IntentCategory.REPO_ONBOARDING:
             readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
@@ -202,6 +238,28 @@ class ContextRetriever:
             ref_files = RelationshipExtractor.extract_referenced_files(combined_text)
 
             evidence["referenced_prs"] = ref_prs
+
+            # Follow the Issue -> PR relationship instead of just recording
+            # the numbers: fetch the first referenced PR and pull its changed
+            # files in as evidence, completing Issue -> PR -> Changed Files.
+            if ref_prs:
+                linked_pr = GitHubClient.fetch_pull_request(token, owner, repo, ref_prs[0])
+                if linked_pr:
+                    evidence["linked_pr"] = linked_pr
+                    # The PR's own branch, not the repo's default branch --
+                    # fetching without a ref would show whatever main
+                    # currently has, not what this PR actually changed.
+                    pr_head_sha = (linked_pr.get("head") or {}).get("sha")
+                    linked_pr_files = GitHubClient.fetch_pr_files(token, owner, repo, ref_prs[0])
+                    evidence["linked_pr_files"] = linked_pr_files or []
+                    for f in (linked_pr_files or [])[:5]:
+                        filename = f.get("filename")
+                        if filename and filename not in fetched_files:
+                            content = GitHubClient.fetch_file_content(
+                                token, owner, repo, filename, ref=pr_head_sha
+                            )
+                            if content:
+                                fetched_files[filename] = content[:max_comment]
 
             for fname in ref_files[:6]:
                 if fname not in fetched_files:

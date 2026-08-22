@@ -49,10 +49,15 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || '' }}
+          KA_OWNER: ${{ github.repository_owner }}
+          KA_REPO: ${{ github.event.repository.name }}
+          KA_ISSUE: ${{ github.event.issue.number || github.event.pull_request.number }}
+          KA_COMMENT: ${{ github.event.comment.body }}
+          KA_AUTHOR: ${{ github.event.comment.user.login }}
         run: |
           python knowledge_engine.py \
-            --owner "${{ github.repository_owner }}" \
-            --repo "${{ github.event.repository.name }}" \
-            --issue "${{ github.event.issue.number || github.event.pull_request.number }}" \
-            --comment "${{ github.event.comment.body }}" \
-            --author "${{ github.event.comment.user.login }}"
+            --owner "$KA_OWNER" \
+            --repo "$KA_REPO" \
+            --issue "$KA_ISSUE" \
+            --comment "$KA_COMMENT" \
+            --author "$KA_AUTHOR"

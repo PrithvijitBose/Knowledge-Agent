@@ -20,6 +20,8 @@ class TestWorkflowTemplate(unittest.TestCase):
         self.assertIn("knowledge_engine.py", content)
         self.assertIn("--owner", content)
         self.assertIn("--issue", content)
+        self.assertIn("KA_COMMENT:", content)
+        self.assertIn('"$KA_COMMENT"', content)
 
 
 if __name__ == "__main__":

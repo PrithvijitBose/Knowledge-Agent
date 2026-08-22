@@ -118,6 +118,9 @@ class ContextExplainer:
                 prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][:5]])
             if evidence.get("pr_comments"):
                 prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
+            if evidence.get("linked_issue"):
+                li = evidence["linked_issue"]
+                prompt += f"\n\n--- LINKED ISSUE #{li.get('number')} (referenced by this PR) ---\nTitle: {li.get('title')}\nBody:\n{li.get('body')}\n"
 
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             if evidence.get("architecture_files"):
@@ -134,6 +137,14 @@ class ContextExplainer:
             prompt += f"--- ISSUE #{iss.get('number')} ---\nTitle: {iss.get('title')}\nBody:\n{iss.get('body')}\n"
             if evidence.get("comments"):
                 prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][:5]])
+            if evidence.get("linked_pr"):
+                lpr = evidence["linked_pr"]
+                prompt += f"\n\n--- LINKED PR #{lpr.get('number')} (referenced by this issue) ---\nTitle: {lpr.get('title')}\nBody:\n{lpr.get('body')}\n"
+                if evidence.get("linked_pr_files"):
+                    prompt += "\nChanged Files:\n" + "\n".join(
+                        f"- {f.get('filename')} (+{f.get('additions')}/-{f.get('deletions')})"
+                        for f in evidence["linked_pr_files"]
+                    )
 
         if fetched_files:
             prompt += "\n--- EVIDENCE FILES ---\n"

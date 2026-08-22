@@ -30,10 +30,10 @@ class ExecutionTracer:
         status_badge = "✅ **Success**" if self.success else "❌ **Failed**"
 
         md = [
-            f"## 🧠 Knowledge Agent Execution Summary",
-            f"",
-            f"| Metric | Value |",
-            f"| :--- | :--- |",
+            "## 🧠 Knowledge Agent Execution Summary",
+            "",
+            "| Metric | Value |",
+            "| :--- | :--- |",
             f"| **Target** | `{self.owner}/{self.repo}#{self.issue_number}` |",
             f"| **Trigger Author** | `@{self.author}` |",
             f"| **Status** | {status_badge} |",
@@ -41,7 +41,7 @@ class ExecutionTracer:
             f"| **AI Engine** | `{self.engine}` |",
             f"| **Total Elapsed Time** | `{total_time}s` |",
             f"| **Evidence Files Read** | `{len(self.files_read)} files` |",
-            f"",
+            "",
         ]
         if self.files_read:
             md.append("### 📁 Evaluated Files")
