@@ -248,10 +248,25 @@ class GitHubClient:
 
 
     @staticmethod
-    def fetch_file_content(token: str, owner: str, repo: str, file_path: str) -> Optional[str]:
+    def fetch_file_content(
+        token: str, owner: str, repo: str, file_path: str, ref: Optional[str] = None
+    ) -> Optional[str]:
         try:
+            params = {"ref": ref} if ref else None
+            with httpx.Client(timeout=10.0) as client:
+                res = client.get(
+                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}",
+                    headers=GitHubClient._get_headers(token),
+                    params=params,
+                )
+                res.raise_for_status()
+                data = res.json()
+                if "content" in data and data.get("encoding") == "base64":
+                    decoded_bytes = base64.b64decode(data["content"])
+                    return decoded_bytes.decode("utf-8", errors="replace")
             res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}", token)
             if res is None:
+
                 return None
             res.raise_for_status()
             data = res.json()
@@ -343,14 +358,25 @@ class RelationshipExtractor:
             r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
             r'pull\/(\d+)'
         ]
-        numbers = set()
+        # Position-ordered, not numerically sorted: callers that take index 0
+        # as "the first referenced PR" (intent classification, the bidirectional
+        # evidence chain) mean the first one mentioned in the text, and
+        # "Fixes #43; Closes #12" must resolve to #43, not the lower number.
+        matches: List[tuple] = []
         for pat in patterns:
-            for match in re.findall(pat, text, re.IGNORECASE):
+            for m in re.finditer(pat, text, re.IGNORECASE):
                 try:
-                    numbers.add(int(match))
+                    matches.append((m.start(), int(m.group(1))))
                 except ValueError:
                     pass
-        return sorted(list(numbers))
+        matches.sort(key=lambda pair: pair[0])
+        seen = set()
+        ordered: List[int] = []
+        for _, num in matches:
+            if num not in seen:
+                seen.add(num)
+                ordered.append(num)
+        return ordered
 
     @staticmethod
     def extract_referenced_issues(text: str) -> List[int]:
@@ -361,14 +387,22 @@ class RelationshipExtractor:
             r'github\.com\/[^\/]+\/[^\/]+\/issues\/(\d+)',
             r'issues\/(\d+)'
         ]
-        numbers = set()
+        # Same position-ordered contract as extract_referenced_prs.
+        matches: List[tuple] = []
         for pat in patterns:
-            for match in re.findall(pat, text, re.IGNORECASE):
+            for m in re.finditer(pat, text, re.IGNORECASE):
                 try:
-                    numbers.add(int(match))
+                    matches.append((m.start(), int(m.group(1))))
                 except ValueError:
                     pass
-        return sorted(list(numbers))
+        matches.sort(key=lambda pair: pair[0])
+        seen = set()
+        ordered: List[int] = []
+        for _, num in matches:
+            if num not in seen:
+                seen.add(num)
+                ordered.append(num)
+        return ordered
 
     @staticmethod
     def extract_referenced_files(text: str) -> List[str]:
@@ -504,7 +538,6 @@ class ContextRetriever:
             if target_pr:
                 pr = GitHubClient.fetch_pull_request(token, owner, repo, target_pr)
                 pr_comments = GitHubClient.fetch_pr_comments(token, owner, repo, target_pr)
-
                 review_comments = GitHubClient.fetch_pr_review_comments(token, owner, repo, target_pr)
                 changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
                 diff = GitHubClient.fetch_pr_diff(token, owner, repo, target_pr)
@@ -514,11 +547,6 @@ class ContextRetriever:
                 evidence["review_comments"] = review_comments or []
                 evidence["changed_files"] = changed_files or []
                 evidence["diff"] = diff[:3500] if diff else None
-                changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
-                evidence["pr"] = pr
-                evidence["pr_comments"] = pr_comments or []
-                evidence["changed_files"] = changed_files or []
-
 
                 # Fetch content of key changed files
                 for f in (changed_files or [])[:5]:
@@ -527,15 +555,26 @@ class ContextRetriever:
                         content = GitHubClient.fetch_file_content(token, owner, repo, filename)
                         if content:
                             fetched_files[filename] = content[:2500]
+
+                # Follow the PR -> Issue relationship: "Fixes #43" in the PR
+                # body/comments means issue #43's own context belongs in the
+                # evidence too, not just the PR's own description.
+                pr_text = f"{(pr or {}).get('body', '')}\n" + "\n".join(
+                    c.get("body", "") for c in (pr_comments or [])
+                )
+                ref_issues = RelationshipExtractor.extract_referenced_issues(pr_text)
+                evidence["referenced_issues"] = ref_issues
+                if ref_issues:
+                    linked_issue = GitHubClient.fetch_issue(token, owner, repo, ref_issues[0])
+                    if linked_issue:
+                        evidence["linked_issue"] = linked_issue
             else:
                 evidence["pr"] = None
                 evidence["pr_comments"] = []
                 evidence["review_comments"] = []
                 evidence["changed_files"] = []
                 evidence["diff"] = None
-
-
-                evidence["changed_files"] = []
+                evidence["referenced_issues"] = []
 
         elif intent == IntentCategory.REPO_ONBOARDING:
             readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
@@ -620,6 +659,28 @@ class ContextRetriever:
             ref_files = RelationshipExtractor.extract_referenced_files(combined_text)
 
             evidence["referenced_prs"] = ref_prs
+
+            # Follow the Issue -> PR relationship instead of just recording
+            # the numbers: fetch the first referenced PR and pull its changed
+            # files in as evidence, completing Issue -> PR -> Changed Files.
+            if ref_prs:
+                linked_pr = GitHubClient.fetch_pull_request(token, owner, repo, ref_prs[0])
+                if linked_pr:
+                    evidence["linked_pr"] = linked_pr
+                    # The PR's own branch, not the repo's default branch --
+                    # fetching without a ref would show whatever main
+                    # currently has, not what this PR actually changed.
+                    pr_head_sha = (linked_pr.get("head") or {}).get("sha")
+                    linked_pr_files = GitHubClient.fetch_pr_files(token, owner, repo, ref_prs[0])
+                    evidence["linked_pr_files"] = linked_pr_files or []
+                    for f in (linked_pr_files or [])[:5]:
+                        filename = f.get("filename")
+                        if filename and filename not in fetched_files:
+                            content = GitHubClient.fetch_file_content(
+                                token, owner, repo, filename, ref=pr_head_sha
+                            )
+                            if content:
+                                fetched_files[filename] = content[:2500]
 
             for fname in ref_files[:6]:
                 if fname not in fetched_files:
@@ -756,7 +817,9 @@ class ContextExplainer:
                 prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][:5]])
             if evidence.get("pr_comments"):
                 prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
-
+            if evidence.get("linked_issue"):
+                li = evidence["linked_issue"]
+                prompt += f"\n\n--- LINKED ISSUE #{li.get('number')} (referenced by this PR) ---\nTitle: {li.get('title')}\nBody:\n{li.get('body')}\n"
 
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             if evidence.get("architecture_files"):
@@ -773,6 +836,14 @@ class ContextExplainer:
             prompt += f"--- ISSUE #{iss.get('number')} ---\nTitle: {iss.get('title')}\nBody:\n{iss.get('body')}\n"
             if evidence.get("comments"):
                 prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][:5]])
+            if evidence.get("linked_pr"):
+                lpr = evidence["linked_pr"]
+                prompt += f"\n\n--- LINKED PR #{lpr.get('number')} (referenced by this issue) ---\nTitle: {lpr.get('title')}\nBody:\n{lpr.get('body')}\n"
+                if evidence.get("linked_pr_files"):
+                    prompt += "\nChanged Files:\n" + "\n".join(
+                        f"- {f.get('filename')} (+{f.get('additions')}/-{f.get('deletions')})"
+                        for f in evidence["linked_pr_files"]
+                    )
 
         if fetched_files:
             prompt += "\n--- EVIDENCE FILES ---\n"
