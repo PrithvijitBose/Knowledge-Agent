@@ -1,18 +1,50 @@
 """
 Knowledge Engine (knowledge_engine.py)
-Unified Core Engine for Knowledge — The Engineering Context Layer for Repositories.
+Unified Core Engine & Backward Compatibility Facade for Knowledge Agent.
 
-Features:
-1. Config & Environment Management
-2. GitHub REST API Client (Issues, PRs, Comments, File Contents, Tree)
-3. Intent-Driven Context Discovery (Decoupled Intent Classification & Minimal Evidence Retrieval)
-4. Intent-Specific Personalized Response Synthesizer (Issue, PR, Onboarding, Architecture, Feature, Historical, Contribution)
-5. Bidirectional Issue ↔ PR Relationship Parsing
-6. Guardrail-Enforced Mistral AI Prompt Engine adhering to KNOWLEDGE.md
-7. Headless CLI Runner for GitHub Actions
+All components are modularized in the `knowledge_agent` package:
+- knowledge_agent.config: Configuration and environment variables
+- knowledge_agent.github: GitHub REST API Client
+- knowledge_agent.citations: Citation and permalink formatting
+- knowledge_agent.intent: IntentCategory and IntentClassifier
+- knowledge_agent.retriever: RelationshipExtractor and ContextRetriever
+- knowledge_agent.prompt: ContextExplainer
+- knowledge_agent.tracer: ExecutionTracer
+- knowledge_agent.agent: KnowledgeAgent, is_bot_triggered, process_github_comment
+- knowledge_agent.__main__: CLI entry point
 """
 
 import sys
+from knowledge_agent import (
+    __version__,
+    GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET,
+    REDIRECT_URI,
+    MISTRAL_API_KEY,
+    MISTRAL_MODEL,
+    MISTRAL_API_URL,
+    GITHUB_API_BASE,
+    GITHUB_AUTH_URL,
+    GITHUB_TOKEN_URL,
+    is_github_configured,
+    is_mistral_configured,
+    is_llm_configured,
+    get_max_file_chars,
+    get_max_comment_chars,
+    get_max_diff_chars,
+    GitHubClient,
+    CitationFormatter,
+    IntentCategory,
+    IntentClassifier,
+    RelationshipExtractor,
+    ContextRetriever,
+    ContextExplainer,
+    ExecutionTracer,
+    KnowledgeAgent,
+    is_bot_triggered,
+    process_github_comment,
+)
+from knowledge_agent.__main__ import main
 import os
 import re
 import base64
@@ -1184,29 +1216,5 @@ def process_github_comment(
     finally:
         tracer.finish(success, result)
 
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Knowledge Engine CLI Runner")
-    parser.add_argument("--owner", required=True, help="GitHub repository owner")
-    parser.add_argument("--repo", required=True, help="GitHub repository name")
-    parser.add_argument("--issue", type=int, required=True, help="Issue or PR number")
-    parser.add_argument("--comment", required=True, help="Comment body containing @Knowledge")
-    parser.add_argument("--token", help="GitHub OAuth or Personal Access Token")
-    parser.add_argument("--author", default="Contributor", help="Author of the comment")
-
-    args = parser.parse_args()
-
-    token = args.token or os.getenv("GITHUB_TOKEN")
-    if not token:
-        print("Error: GitHub Token required via --token or GITHUB_TOKEN environment variable.")
-        sys.exit(1)
-
-    process_github_comment(
-        access_token=token,
-        owner=args.owner,
-        repo=args.repo,
-        issue_number=args.issue,
-        comment_body=args.comment,
-        comment_author=args.author
-    )
+    main()

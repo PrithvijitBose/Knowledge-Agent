@@ -18,12 +18,12 @@
 
 ## 1-Minute GitHub Action Setup
 
-To add Knowledge Bot to any repository, copy these 4 files into your project:
+To add Knowledge Bot to any repository, copy the workflow template from `templates/knowledge.yml` into `.github/workflows/knowledge.yml`:
 
 ```text
 Your-Repo/
 ├── .github/workflows/
-│   └── knowledge.yml       # GitHub Action workflow
+│   └── knowledge.yml       # Copied from templates/knowledge.yml
 ├── knowledge_engine.py     # Unified core engine
 ├── providers.py            # Multi-LLM provider adapters
 └── KNOWLEDGE.md            # Repository rulebook & guidelines
@@ -58,6 +58,16 @@ export GEMINI_MODEL=gemini-1.5-pro
 export GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
+### Evidence Truncation Limits (Optional)
+
+Configure context bounding limits via environment variables:
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `KNOWLEDGE_MAX_FILE_CHARS` | Maximum characters read per evidence file | `3000` |
+| `KNOWLEDGE_MAX_COMMENT_CHARS` | Maximum characters read per comment | `2500` |
+| `KNOWLEDGE_MAX_DIFF_CHARS` | Maximum characters read from dependency files | `1500` |
+
 ### Local / Air-Gapped Execution with Ollama
 
 To run Knowledge without third-party API calls using local Ollama models:
@@ -77,11 +87,18 @@ export OLLAMA_MODEL=llama3.2:latest
 git clone https://github.com/PrithvijitBose/Knowledge-Agent.git
 cd Knowledge-Agent
 
-# Install dependencies
+# Install in development mode
+pip install -e .
+
+# Or install dependencies from requirements.txt
 pip install -r requirements.txt
 
+# Run CLI directly
+knowledge-agent --help
+# Or: python -m knowledge_agent --help
+
 # Run all hermetic unit tests offline
-python -m unittest discover -s . -p "test_*.py"
+python -m pytest
 ```
 
 ---
