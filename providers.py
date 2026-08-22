@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional, List
 import httpx
 from dotenv import load_dotenv
 
+import retry
+
 load_dotenv()
 
 
@@ -78,7 +80,17 @@ class MistralProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                # A generation call is not idempotent and costs real money --
+                # a dropped connection after the provider already generated a
+                # response must not be blindly retried, since we can't tell
+                # whether it went through. Only retry on a definite rejection
+                # (5xx / rate limit), never on a connection-level exception.
+                res = retry.request_with_retry(
+                    lambda: client.post(url, headers=headers, json=payload),
+                    retry_on_connection_error=False,
+                )
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 choices = data.get("choices", [])
@@ -121,7 +133,17 @@ class OpenAIProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                # A generation call is not idempotent and costs real money --
+                # a dropped connection after the provider already generated a
+                # response must not be blindly retried, since we can't tell
+                # whether it went through. Only retry on a definite rejection
+                # (5xx / rate limit), never on a connection-level exception.
+                res = retry.request_with_retry(
+                    lambda: client.post(url, headers=headers, json=payload),
+                    retry_on_connection_error=False,
+                )
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 choices = data.get("choices", [])
@@ -164,7 +186,17 @@ class AnthropicProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                # A generation call is not idempotent and costs real money --
+                # a dropped connection after the provider already generated a
+                # response must not be blindly retried, since we can't tell
+                # whether it went through. Only retry on a definite rejection
+                # (5xx / rate limit), never on a connection-level exception.
+                res = retry.request_with_retry(
+                    lambda: client.post(url, headers=headers, json=payload),
+                    retry_on_connection_error=False,
+                )
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 contents = data.get("content", [])
@@ -208,7 +240,17 @@ class GeminiProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                # A generation call is not idempotent and costs real money --
+                # a dropped connection after the provider already generated a
+                # response must not be blindly retried, since we can't tell
+                # whether it went through. Only retry on a definite rejection
+                # (5xx / rate limit), never on a connection-level exception.
+                res = retry.request_with_retry(
+                    lambda: client.post(url, headers=headers, json=payload),
+                    retry_on_connection_error=False,
+                )
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 candidates = data.get("candidates", [])
@@ -252,7 +294,17 @@ class GroqProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=30.0) as client:
-                res = client.post(url, headers=headers, json=payload)
+                # A generation call is not idempotent and costs real money --
+                # a dropped connection after the provider already generated a
+                # response must not be blindly retried, since we can't tell
+                # whether it went through. Only retry on a definite rejection
+                # (5xx / rate limit), never on a connection-level exception.
+                res = retry.request_with_retry(
+                    lambda: client.post(url, headers=headers, json=payload),
+                    retry_on_connection_error=False,
+                )
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 choices = data.get("choices", [])
@@ -291,7 +343,14 @@ class OllamaProvider(BaseLLMProvider):
 
         try:
             with httpx.Client(timeout=60.0) as client:
-                res = client.post(url, json=payload)
+                # Same non-idempotency concern as the other providers: don't
+                # retry blind on a connection-level exception.
+                res = retry.request_with_retry(
+                    lambda: client.post(url, json=payload),
+                    retry_on_connection_error=False,
+                )
+                if res is None:
+                    return ""
                 res.raise_for_status()
                 data = res.json()
                 message = data.get("message", {})
