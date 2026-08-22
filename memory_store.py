@@ -123,7 +123,14 @@ class MemoryStore:
         if not isinstance(repo_entries, dict):
             return None
         entry = repo_entries.get(topic_key(intent, keywords))
-        return entry if isinstance(entry, dict) else None
+        if not isinstance(entry, dict):
+            return None
+        if not isinstance(entry.get("summary", ""), str):
+            return None
+        files_read = entry.get("files_read", [])
+        if not isinstance(files_read, list) or not all(isinstance(path, str) for path in files_read):
+            return None
+        return entry
 
     def put(
         self,
