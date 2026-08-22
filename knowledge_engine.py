@@ -21,7 +21,9 @@ from typing import Dict, Any, List, Optional
 import httpx
 from dotenv import load_dotenv
 import providers
+import memory_store
 import retry
+
 
 # Load environment variables
 load_dotenv()
@@ -646,9 +648,17 @@ class ContextRetriever:
                 iss = GitHubClient.fetch_issue(token, owner, repo, target_issue)
                 comments = GitHubClient.fetch_issue_comments(token, owner, repo, target_issue)
                 evidence["issue"] = iss or {"number": target_issue, "title": f"Issue #{target_issue}", "body": query}
+                # iss is None means the fetch failed and evidence["issue"] above
+                # is a synthetic placeholder built from the query text alone --
+                # not repository evidence. Callers that decide whether to
+                # persist a finding (memory_store) must check this, not just
+                # evidence["issue"] truthiness, or a placeholder gets stored
+                # as if it were a grounded prior investigation.
+                evidence["issue_fetch_ok"] = iss is not None
                 evidence["comments"] = comments or []
             else:
                 evidence["issue"] = None
+                evidence["issue_fetch_ok"] = False
                 evidence["comments"] = []
 
             combined_text = query
@@ -732,6 +742,8 @@ class ContextExplainer:
             "If necessary: '> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.'\n\n"
             "15. **Self-verification before answering**: Internally verify — Did I inspect actual content? Did I follow relationships? Did I distinguish evidence from inference? Did I explain WHY? "
             "If this answer could be pasted unchanged into another repo and still sound correct, it's too generic.\n\n"
+            "16. **Prior investigation is a lead, not a fact**: If a PRIOR INVESTIGATION section appears below, it's what Knowledge found on this same topic in an earlier run. Treat it as a starting point to verify against the evidence you have now, never as something already established. "
+            "If it's marked stale (the codebase has changed since), verify it especially carefully — it may no longer be accurate. Build on it when it still holds, correct it out loud when it doesn't. Don't just repeat it.\n\n"
             "CORE PRINCIPLE: Find relevant files → Read them → Follow their relationships → Establish evidence → Build the mental model → Teach @{author}.\n"
             "Never make @{author} perform the investigation that Knowledge was asked to perform.\n"
         )
@@ -805,6 +817,21 @@ class ContextExplainer:
         fetched_files = evidence.get("fetched_files", {})
 
         prompt = f"Repository: {owner}/{repo}\nContributor (@{query_author}) asks: {query}\nDetected intent: {intent}\n\n"
+
+        prior = evidence.get("prior_context")
+        if prior and prior.get("summary"):
+            staleness_note = (
+                "the codebase has changed since this was found -- verify carefully"
+                if prior.get("stale")
+                else "codebase unchanged since this was found"
+            )
+            prompt += (
+                f"--- PRIOR INVESTIGATION ON THIS TOPIC ({staleness_note}) ---\n"
+                f"{prior['summary']}\n"
+            )
+            if prior.get("files_read"):
+                prompt += "Files read previously: " + ", ".join(prior["files_read"]) + "\n"
+            prompt += "\n"
 
         if intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence and evidence["pr"]:
             pr = evidence["pr"]
@@ -910,6 +937,18 @@ class KnowledgeAgent:
             pr_number=pr_number
         )
 
+        # 2.5. Persistent Repository Memory (#6): surface a prior finding on
+        # this same topic, if one exists, as context to verify against --
+        # never as a fact the fresh investigation above gets to skip.
+        memory = memory_store.MemoryStore()
+        prior_entry = memory.get(owner, repo, intent_info["intent"], intent_info.get("keywords", []))
+        if prior_entry:
+            evidence["prior_context"] = {
+                "summary": prior_entry.get("summary", ""),
+                "files_read": prior_entry.get("files_read", []),
+                "stale": memory.is_stale(prior_entry, evidence.get("commit_sha")),
+            }
+
         # 3. Intent-Specific Prompt Synthesis
         system_prompt = ContextExplainer.build_system_prompt(
             intent=intent_info["intent"],
@@ -927,6 +966,20 @@ class KnowledgeAgent:
 
 
         files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
+
+        # Record this finding for next time. Only worth storing when the
+        # investigation actually turned up something -- an empty-evidence
+        # fallback answer isn't a finding worth building on later. A
+        # synthetic issue placeholder (fetch failed, evidence["issue"] built
+        # from the query text alone) does not count as "found something";
+        # check issue_fetch_ok explicitly rather than evidence["issue"]
+        # truthiness, which the placeholder always satisfies.
+        has_issue_evidence = evidence.get("issue_fetch_ok") is True
+        if files_read or has_issue_evidence or evidence.get("pr"):
+            memory.put(
+                owner, repo, intent_info["intent"], intent_info.get("keywords", []),
+                summary=llm_answer, files_read=files_read, commit_sha=evidence.get("commit_sha"),
+            )
         citations_text = CitationFormatter.build_citations_section(owner, repo, evidence.get("commit_sha"), files_read)
 
         discussion_comments = [

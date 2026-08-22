@@ -1,6 +1,9 @@
 # Environment variables (DO NOT COMMIT SECRETS)
 .env
 
+# Persistent repository memory (#6) -- runtime state, not source
+.knowledge/
+
 # Python Bytecode & Cache
 __pycache__/
 *.py[cod]
