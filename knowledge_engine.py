@@ -23,6 +23,7 @@ from dotenv import load_dotenv
 import providers
 import memory_store
 import retry
+from adaptive_depth import AdaptiveDepthEngine
 
 
 # Load environment variables
@@ -693,7 +694,12 @@ class ContextExplainer:
     """Formats system & user prompts aligned with KNOWLEDGE.md investigation philosophy."""
 
     @staticmethod
-    def build_system_prompt(intent: str, knowledge_rules: Optional[str], author: str = "Contributor") -> str:
+    def build_system_prompt(
+        intent: str,
+        knowledge_rules: Optional[str],
+        author: str = "Contributor",
+        depth_score: Optional[int] = None
+    ) -> str:
         base = (
             "You are @Knowledge, an engineering context assistant for this repository.\n"
             "Act like an experienced senior engineer sitting beside @{author}, helping them understand a real codebase.\n\n"
@@ -783,6 +789,10 @@ class ContextExplainer:
                 "- Answer @{author}'s question directly using the most relevant repository evidence available.\n"
                 "- Investigate before answering — don't just match filenames."
             )
+
+        if depth_score is not None:
+            depth_guidance = AdaptiveDepthEngine().get_prompt_guidance(depth_score)
+            base += f"\n\n=== INTERNAL DEPTH GUIDANCE ===\n{depth_guidance}\n===============================\n"
 
         return base.replace("{author}", author)
 
@@ -899,7 +909,8 @@ class KnowledgeAgent:
         issue_number: Optional[int] = None,
         pr_number: Optional[int] = None,
         provider_name: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        depth_score: Optional[int] = None
     ) -> Dict[str, Any]:
         # 1. Intent Classification
         intent_info = IntentClassifier.classify(query)
@@ -928,10 +939,19 @@ class KnowledgeAgent:
             }
 
         # 3. Intent-Specific Prompt Synthesis
+        if depth_score is None:
+            history_texts = []
+            if evidence.get("comments"):
+                history_texts.extend([c.get("body", "") for c in evidence["comments"] if isinstance(c, dict)])
+            if evidence.get("pr_comments"):
+                history_texts.extend([c.get("body", "") for c in evidence["pr_comments"] if isinstance(c, dict)])
+            depth_score = AdaptiveDepthEngine().calculate_depth(query, history=history_texts if history_texts else None)
+
         system_prompt = ContextExplainer.build_system_prompt(
             intent=intent_info["intent"],
             knowledge_rules=evidence.get("knowledge_rules"),
-            author=author
+            author=author,
+            depth_score=depth_score
         )
         user_prompt = ContextExplainer.build_user_prompt(evidence, query_author=author)
 
@@ -977,6 +997,7 @@ class KnowledgeAgent:
             "query": query,
             "author": author,
             "intent": intent_info["intent"],
+            "depth_score": depth_score,
             "answer": llm_answer,
             "citations": citations_text,
             "commit_sha": evidence.get("commit_sha"),
