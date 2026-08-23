@@ -191,6 +191,7 @@ class GitHubClient:
 
     @staticmethod
     def fetch_repo_issues(token: str, owner: str, repo: str) -> List[Dict[str, Any]]:
+        """Fetches recent repository issues, filtering out pull requests."""
         items = GitHubClient._get_paginated(
             f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues",
             token,
@@ -199,20 +200,10 @@ class GitHubClient:
             extra_params={"state": "all", "sort": "updated", "direction": "desc"},
         )
         return [i for i in items if "pull_request" not in i]
-        params = {"state": "all", "sort": "updated", "direction": "desc", "per_page": 30}
-        try:
-            res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues", token, params=params)
-            if res is None:
-                return []
-            res.raise_for_status()
-            return [i for i in res.json() if "pull_request" not in i]
-        except Exception as e:
-            print(f"GitHub API Error (fetch_repo_issues): {e}")
-            return []
-
 
     @staticmethod
     def fetch_pull_request(token: str, owner: str, repo: str, pr_number: int) -> Optional[Dict[str, Any]]:
+        """Fetches metadata for a specific pull request."""
         try:
             res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}", token)
             if res is None:
@@ -225,6 +216,7 @@ class GitHubClient:
 
     @staticmethod
     def fetch_pr_files(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+        """Fetches list of changed files in a pull request."""
         try:
             res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/files", token)
             if res is None:
@@ -237,21 +229,12 @@ class GitHubClient:
 
     @staticmethod
     def fetch_issue_comments(token: str, owner: str, repo: str, issue_number: int) -> List[Dict[str, Any]]:
+        """Fetches discussion comments for a specific issue using pagination."""
         return GitHubClient._get_paginated(
             f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}/comments",
             token,
             f"fetch_issue_comments #{issue_number}",
         )
-
-        try:
-            res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{issue_number}/comments", token)
-            if res is None:
-                return []
-            res.raise_for_status()
-            return res.json()
-        except Exception as e:
-            print(f"GitHub API Error (fetch_issue_comments #{issue_number}): {e}")
-            return []
 
     @staticmethod
     def fetch_pr_diff(token: str, owner: str, repo: str, pr_number: int) -> Optional[str]:
@@ -282,6 +265,7 @@ class GitHubClient:
 
     @staticmethod
     def fetch_pr_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+        """Fetches both issue discussion comments and code review comments on a PR."""
         comments = GitHubClient._get_paginated(
             f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{pr_number}/comments",
             token,
@@ -292,26 +276,6 @@ class GitHubClient:
             token,
             f"fetch_pr_comments(review) #{pr_number}",
         )
-        try:
-            res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments", token)
-            if res is not None and res.status_code == 200:
-                return res.json()
-        except Exception as e:
-            print(f"GitHub API Error (fetch_pr_review_comments #{pr_number}): {e}")
-        return []
-
-    @staticmethod
-    def fetch_pr_comments(token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
-        comments = []
-        try:
-            res_issue = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/issues/{pr_number}/comments", token)
-            if res_issue is not None and res_issue.status_code == 200:
-                comments.extend(res_issue.json())
-            res_pr = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/pulls/{pr_number}/comments", token)
-            if res_pr is not None and res_pr.status_code == 200:
-                comments.extend(res_pr.json())
-        except Exception as e:
-            print(f"GitHub API Error (fetch_pr_comments #{pr_number}): {e}")
         return comments
 
 
@@ -885,7 +849,6 @@ class ContextExplainer:
                 prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][-5:]])
             if evidence.get("pr_comments"):
                 prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][-5:]])
-                prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
             if evidence.get("linked_issue"):
                 li = evidence["linked_issue"]
                 prompt += f"\n\n--- LINKED ISSUE #{li.get('number')} (referenced by this PR) ---\nTitle: {li.get('title')}\nBody:\n{li.get('body')}\n"
@@ -906,7 +869,6 @@ class ContextExplainer:
             prompt += f"--- ISSUE #{iss.get('number')} ---\nTitle: {iss.get('title')}\nBody:\n{iss.get('body')}\n"
             if evidence.get("comments"):
                 prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][-5:]])
-                prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][:5]])
             if evidence.get("linked_pr"):
                 lpr = evidence["linked_pr"]
                 prompt += f"\n\n--- LINKED PR #{lpr.get('number')} (referenced by this issue) ---\nTitle: {lpr.get('title')}\nBody:\n{lpr.get('body')}\n"
