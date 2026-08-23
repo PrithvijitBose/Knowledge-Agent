@@ -1,6 +1,7 @@
 import re
 from typing import Dict, Any, Optional
 import providers
+import memory_store
 from knowledge_agent.github import GitHubClient
 from knowledge_agent.intent import IntentCategory, IntentClassifier
 from knowledge_agent.retriever import ContextRetriever
@@ -54,6 +55,16 @@ class KnowledgeAgent:
             pr_number=pr_number
         )
 
+        # 2.5. Persistent Repository Memory (#6)
+        memory = memory_store.MemoryStore()
+        prior_entry = memory.get(owner, repo, intent_info["intent"], intent_info.get("keywords", []))
+        if prior_entry:
+            evidence["prior_context"] = {
+                "summary": prior_entry.get("summary", ""),
+                "files_read": prior_entry.get("files_read", []),
+                "stale": memory.is_stale(prior_entry, evidence.get("commit_sha")),
+            }
+
         # 3. Intent-Specific Prompt Synthesis
         system_prompt = ContextExplainer.build_system_prompt(
             intent=intent_info["intent"],
@@ -66,10 +77,17 @@ class KnowledgeAgent:
         provider = providers.get_provider(provider_name, model=model)
         llm_answer = KnowledgeAgent.call_llm(system_prompt, user_prompt, provider_name=provider_name, model=model)
 
+        files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
+
+        has_issue_evidence = evidence.get("issue_fetch_ok") is True
+        if llm_answer and (files_read or has_issue_evidence or evidence.get("pr")):
+            memory.put(
+                owner, repo, intent_info["intent"], intent_info.get("keywords", []),
+                summary=llm_answer, files_read=files_read, commit_sha=evidence.get("commit_sha"),
+            )
+
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
-
-        files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
         citations_text = CitationFormatter.build_citations_section(owner, repo, evidence.get("commit_sha"), files_read)
 
         discussion_comments = [

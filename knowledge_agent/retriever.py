@@ -223,10 +223,12 @@ class ContextRetriever:
             target_issue = issue_number or (intent_info.get("issue_numbers", [])[0] if intent_info.get("issue_numbers") else None)
             if target_issue:
                 iss = GitHubClient.fetch_issue(token, owner, repo, target_issue)
+                evidence["issue_fetch_ok"] = iss is not None
                 comments = GitHubClient.fetch_issue_comments(token, owner, repo, target_issue)
                 evidence["issue"] = iss or {"number": target_issue, "title": f"Issue #{target_issue}", "body": query}
                 evidence["comments"] = comments or []
             else:
+                evidence["issue_fetch_ok"] = False
                 evidence["issue"] = None
                 evidence["comments"] = []
 
