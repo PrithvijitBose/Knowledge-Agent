@@ -253,22 +253,14 @@ class GitHubClient:
     def fetch_file_content(
         token: str, owner: str, repo: str, file_path: str, ref: Optional[str] = None
     ) -> Optional[str]:
+        params = {"ref": ref} if ref else None
         try:
-            params = {"ref": ref} if ref else None
-            with httpx.Client(timeout=10.0) as client:
-                res = client.get(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}",
-                    headers=GitHubClient._get_headers(token),
-                    params=params,
-                )
-                res.raise_for_status()
-                data = res.json()
-                if "content" in data and data.get("encoding") == "base64":
-                    decoded_bytes = base64.b64decode(data["content"])
-                    return decoded_bytes.decode("utf-8", errors="replace")
-            res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}", token)
+            res = GitHubClient._get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}",
+                token,
+                params=params,
+            )
             if res is None:
-
                 return None
             res.raise_for_status()
             data = res.json()
@@ -352,18 +344,9 @@ class RelationshipExtractor:
     """Parses text for explicit and implicit bidirectional relationships between Issues, PRs, and Files."""
 
     @staticmethod
-    def extract_referenced_prs(text: str) -> List[int]:
+    def _extract_position_ordered_numbers(text: str, patterns: List[str]) -> List[int]:
         if not text:
             return []
-        patterns = [
-            r'(?:PR|pr|Pull Request|pull)\s*#(\d+)',
-            r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
-            r'pull\/(\d+)'
-        ]
-        # Position-ordered, not numerically sorted: callers that take index 0
-        # as "the first referenced PR" (intent classification, the bidirectional
-        # evidence chain) mean the first one mentioned in the text, and
-        # "Fixes #43; Closes #12" must resolve to #43, not the lower number.
         matches: List[tuple] = []
         for pat in patterns:
             for m in re.finditer(pat, text, re.IGNORECASE):
@@ -381,30 +364,22 @@ class RelationshipExtractor:
         return ordered
 
     @staticmethod
+    def extract_referenced_prs(text: str) -> List[int]:
+        patterns = [
+            r'(?:PR|pr|Pull Request|pull)\s*#(\d+)',
+            r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
+            r'pull\/(\d+)'
+        ]
+        return RelationshipExtractor._extract_position_ordered_numbers(text, patterns)
+
+    @staticmethod
     def extract_referenced_issues(text: str) -> List[int]:
-        if not text:
-            return []
         patterns = [
             r'(?:Fixes|Closes|Resolves|Issue|issue)\s*#(\d+)',
             r'github\.com\/[^\/]+\/[^\/]+\/issues\/(\d+)',
             r'issues\/(\d+)'
         ]
-        # Same position-ordered contract as extract_referenced_prs.
-        matches: List[tuple] = []
-        for pat in patterns:
-            for m in re.finditer(pat, text, re.IGNORECASE):
-                try:
-                    matches.append((m.start(), int(m.group(1))))
-                except ValueError:
-                    pass
-        matches.sort(key=lambda pair: pair[0])
-        seen = set()
-        ordered: List[int] = []
-        for _, num in matches:
-            if num not in seen:
-                seen.add(num)
-                ordered.append(num)
-        return ordered
+        return RelationshipExtractor._extract_position_ordered_numbers(text, patterns)
 
     @staticmethod
     def extract_referenced_files(text: str) -> List[str]:
@@ -551,18 +526,21 @@ class ContextRetriever:
                 evidence["diff"] = diff[:3500] if diff else None
 
                 # Fetch content of key changed files
+                pr_head_sha = ((pr or {}).get("head") or {}).get("sha")
                 for f in (changed_files or [])[:5]:
                     filename = f.get("filename")
                     if filename and filename not in fetched_files:
-                        content = GitHubClient.fetch_file_content(token, owner, repo, filename)
+                        content = GitHubClient.fetch_file_content(
+                            token, owner, repo, filename, ref=pr_head_sha
+                        )
                         if content:
                             fetched_files[filename] = content[:2500]
 
                 # Follow the PR -> Issue relationship: "Fixes #43" in the PR
                 # body/comments means issue #43's own context belongs in the
                 # evidence too, not just the PR's own description.
-                pr_text = f"{(pr or {}).get('body', '')}\n" + "\n".join(
-                    c.get("body", "") for c in (pr_comments or [])
+                pr_text = f"{(pr or {}).get('body') or ''}\n" + "\n".join(
+                    (c.get("body") or "") for c in (pr_comments or [])
                 )
                 ref_issues = RelationshipExtractor.extract_referenced_issues(pr_text)
                 evidence["referenced_issues"] = ref_issues
@@ -663,7 +641,7 @@ class ContextRetriever:
 
             combined_text = query
             if evidence.get("issue"):
-                combined_text = f"{evidence['issue'].get('title', '')}\n{evidence['issue'].get('body', '')}\n" + "\n".join([c.get('body', '') for c in evidence.get("comments", [])])
+                combined_text = f"{(evidence['issue'].get('title') or '')}\n{(evidence['issue'].get('body') or '')}\n" + "\n".join([(c.get('body') or '') for c in evidence.get("comments", [])])
             
             ref_prs = RelationshipExtractor.extract_referenced_prs(combined_text)
             ref_files = RelationshipExtractor.extract_referenced_files(combined_text)
