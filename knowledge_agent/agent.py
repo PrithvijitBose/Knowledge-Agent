@@ -166,11 +166,13 @@ def process_github_comment(
     success = False
     result: Dict[str, Any] = {}
     try:
-        is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
-        if not is_pr_target and access_token:
+        is_pr_target = False
+        if access_token:
             pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
             if pr_check and "id" in pr_check:
                 is_pr_target = True
+        if not is_pr_target:
+            is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
 
         pr_num = issue_number if is_pr_target else None
         issue_num = issue_number if not is_pr_target else None

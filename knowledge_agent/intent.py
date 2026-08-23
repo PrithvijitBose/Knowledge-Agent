@@ -33,34 +33,41 @@ class IntentClassifier:
             if kw in query_lower:
                 topic_keywords.append(kw)
 
+        base_result = {
+            "keywords": topic_keywords,
+            "pr_numbers": prs,
+            "issue_numbers": issues,
+            "files": files,
+        }
+
         # 1. PR Understanding
         if prs or any(k in query_lower for k in ["why does pr", "pr #", "pull request", "pr context", "pr review"]):
-            return {"intent": IntentCategory.PR_UNDERSTANDING, "pr_numbers": prs, "keywords": topic_keywords}
+            return {**base_result, "intent": IntentCategory.PR_UNDERSTANDING}
 
         # 2. Repo Onboarding
         if any(k in query_lower for k in ["just joined", "new here", "learn this codebase", "how should i learn", "onboard", "where do i start", "prerequisites"]):
-            return {"intent": IntentCategory.REPO_ONBOARDING, "keywords": topic_keywords}
+            return {**base_result, "intent": IntentCategory.REPO_ONBOARDING}
 
         # 3. Contribution Guidance
         if any(k in query_lower for k in ["contribute", "run tests", "setup dev", "installation", "build", "how do i run", "how to run", "how to build", "how to test"]):
-            return {"intent": IntentCategory.CONTRIBUTION_GUIDANCE, "keywords": topic_keywords}
+            return {**base_result, "intent": IntentCategory.CONTRIBUTION_GUIDANCE}
 
         # 4. Architecture Understanding
         if any(k in query_lower for k in ["architecture", "how does", "how do ", "work in this", "design", "component", "flow", "structure"]):
             if any(k in query_lower for k in ["auth", "authentication", "security", "database", "api", "routing", "workflow"]):
-                return {"intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "subsystem", "keywords": topic_keywords}
-            return {"intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "general", "keywords": topic_keywords}
+                return {**base_result, "intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "subsystem"}
+            return {**base_result, "intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "general"}
 
         # 5. Feature Understanding
         if any(k in query_lower for k in ["feature", "implement", "how is", "how are", "functionality", "capability"]):
-            return {"intent": IntentCategory.FEATURE_UNDERSTANDING, "keywords": topic_keywords}
+            return {**base_result, "intent": IntentCategory.FEATURE_UNDERSTANDING}
 
         # 6. Historical Decision
         if any(k in query_lower for k in ["why was", "why did", "decision", "history", "originally", "changed from"]):
-            return {"intent": IntentCategory.HISTORICAL_DECISION, "keywords": topic_keywords}
+            return {**base_result, "intent": IntentCategory.HISTORICAL_DECISION}
 
         # 7. Issue Understanding
         if issues or any(k in query_lower for k in ["issue #", "working on issue", "before contributing to issue", "fix issue"]):
-            return {"intent": IntentCategory.ISSUE_UNDERSTANDING, "issue_numbers": issues, "keywords": topic_keywords}
+            return {**base_result, "intent": IntentCategory.ISSUE_UNDERSTANDING}
 
-        return {"intent": IntentCategory.GENERAL_QUERY, "keywords": topic_keywords}
+        return {**base_result, "intent": IntentCategory.GENERAL_QUERY}

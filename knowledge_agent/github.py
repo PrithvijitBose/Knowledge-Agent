@@ -250,9 +250,11 @@ class GitHubClient:
     @staticmethod
     def fetch_latest_commit_sha(token: str, owner: str, repo: str, branch: Optional[str] = None) -> Optional[str]:
         """Fetches the latest commit SHA for the target or default branch."""
-        target_branch = branch or "main"
+        target_branch = branch or GitHubClient.fetch_repo_default_branch(token, owner, repo)
         try:
             res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/commits/{target_branch}", token)
+            if (res is None or res.status_code != 200) and target_branch != "main":
+                res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/commits/main", token)
             if (res is None or res.status_code != 200) and target_branch != "master":
                 res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/commits/master", token)
             if res is not None and res.status_code == 200:

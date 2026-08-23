@@ -7,7 +7,6 @@ class ExecutionTracer:
     """Records execution metrics, latencies, and writes formatted GitHub Step Summaries."""
 
     def __init__(self, owner: str, repo: str, issue_number: int, author: str):
-        self._time = time
         self.owner = owner
         self.repo = repo
         self.issue_number = issue_number
@@ -26,7 +25,7 @@ class ExecutionTracer:
         self.write_step_summary()
 
     def generate_markdown_summary(self) -> str:
-        total_time = round(self._time.time() - self.start_time, 2)
+        total_time = round(time.time() - self.start_time, 2)
         status_badge = "✅ **Success**" if self.success else "❌ **Failed**"
 
         md = [

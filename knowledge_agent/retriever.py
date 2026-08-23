@@ -180,7 +180,7 @@ class ContextRetriever:
             architecture_candidates = []
             for path in tree:
                 path_lower = path.lower()
-                if any(kw in path_lower for kw in keywords + ["arch", "docs", "design", "security", "auth", "core", "agent", "auth"]):
+                if any(kw in path_lower for kw in [*keywords, "arch", "docs", "design", "security", "auth", "core", "agent"]):
                     architecture_candidates.append(path)
 
             for path in architecture_candidates[:6]:
