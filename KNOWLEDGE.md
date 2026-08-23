@@ -265,6 +265,57 @@ Before returning a repository-level answer, internally verify:
 
 ---
 
+## 13. Adaptive Technicality Calibration (Internal Point System)
+
+Knowledge dynamically calibrates its explanation depth across an internal 1–10 point scale (base 5) based on query vocabulary, intent cues, and conversational history:
+
+- **High Accessibility / Conceptual (Score 1–3):**
+  - Triggered by clarification or simplification cues (e.g., *"explain more clearly"*, *"simpler terms"*, *"ELI5"*, *"for beginners"*, *"break it down"*).
+  - Focuses on conceptual clarity, big-picture architecture, and intuitive analogies.
+  - Avoids dense jargon, low-level bytecode, or exhaustive protocol details before establishing foundational mental models.
+- **Balanced Engineering KT (Score 4–6, Default: 5):**
+  - Default senior-engineer level handoff balancing architectural intent, component flow, and direct evidence links.
+  - Grounded directly in repository files without unnecessary filler.
+- **Deep Technical Implementation (Score 7–10):**
+  - Triggered by low-level technical queries (e.g., *"more technical terms"*, *"AST / bytecode"*, *"HTTP endpoints & database connections"*, *"concurrency / race conditions"*, *"SQL schema / migrations"*).
+  - Delivers direct, concrete code traces, exact function signatures, HTTP routes/methods, schema fields, execution flows, and state transitions.
+
+> [!IMPORTANT]
+> **Strict Non-Disclosure Rule:** The numerical point values, depth scores, calibrations, and calculations are strictly internal. They **MUST NEVER** leak, be mentioned, or be displayed in user-facing comments, summaries, or citations.
+
+---
+
+## 14. Multi-Repository Context Resolution
+
+In modern microservice and polyrepo architectures, a feature or issue frequently spans multiple related repositories (e.g., a Next.js/React frontend communicating with a FastAPI/Express backend, or shared utility libraries).
+
+### Declaring Related Repositories
+
+Related repositories can be declared directly in `KNOWLEDGE.md` under a `## Related Repositories` section:
+
+```markdown
+## Related Repositories
+- `acme/backend-api`: Core FastAPI backend, database services, and REST routes
+- `acme/shared-ui`: Design system components and cross-project UI primitives
+- `acme/auth-service`: OAuth2/OIDC token verification service
+```
+
+Alternatively, companion repositories can be configured using the `KNOWLEDGE_RELATED_REPOS` environment variable:
+```bash
+export KNOWLEDGE_RELATED_REPOS="acme/backend-api, acme/shared-ui, acme/auth-service"
+```
+
+### Cross-Repository Investigation Flow
+
+When a user asks cross-repository questions (e.g., *"How is `layout.tsx` connected to the backend endpoint?"* or *"Which repositories are involved in payment processing?"*), Knowledge:
+1. Detects cross-repository intent across declared companion repositories.
+2. Retrieves trees, commit SHAs, and candidate files from the companion repositories alongside the host repository.
+3. Traces cross-boundary contracts (API endpoints, client requests, shared schemas).
+4. Generates multi-repository evidence citations attributing sources to their respective repositories:
+   `[owner/repo:path/to/file.py#L1-L20](https://github.com/owner/repo/blob/sha/path/to/file.py#L1-L20)`.
+
+---
+
 ## Core Principle
 
 Knowledge should **investigate the repository first**, **understand the relationships** between the relevant pieces, and then **explain what it discovered**.
@@ -291,4 +342,4 @@ Find relevant files
    Teach the developer
 ```
 
-This is what Knowledge does.
+This is what Knowledge does.
