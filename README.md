@@ -2,6 +2,9 @@
 
 **Knowledge** is an engineering context layer bot designed to run natively inside GitHub Issues and Pull Requests. When a contributor or maintainer comments `@Knowledge <question>` or `/knowledge <question>`, the engine classifies query intent, retrieves bounded evidence across repository files and conversation threads, enforces repository rules from `KNOWLEDGE.md`, and posts a structured engineering handoff directly back to GitHub.
 
+For LLMs and coding agents that need to use Knowledge before proposing a change,
+see the [LLM Integration Contract](Integration.md).
+
 ---
 
 ## Features
