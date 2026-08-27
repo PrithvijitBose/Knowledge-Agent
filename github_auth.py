@@ -82,6 +82,10 @@ def fetch_pr_comments(access_token: str, owner: str, repo: str, pr_number: int) 
     return knowledge_engine.GitHubClient.fetch_pr_comments(access_token, owner, repo, pr_number)
 
 
+def fetch_pull_request_files(access_token: str, owner: str, repo: str, pr_number: int) -> List[Dict[str, Any]]:
+    return knowledge_engine.GitHubClient.fetch_pr_files(access_token, owner, repo, pr_number)
+
+
 def extract_referenced_prs(text: str) -> List[int]:
     return knowledge_engine.RelationshipExtractor.extract_referenced_prs(text)
 
@@ -89,3 +93,4 @@ def extract_referenced_prs(text: str) -> List[int]:
 # Aliases
 fetch_issues = fetch_issue
 fetch_pull_requests = fetch_pull_request
+fetch_pr_files = fetch_pull_request_files
