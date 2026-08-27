@@ -15,6 +15,8 @@ This document tracks what **Knowledge already does**, what is **currently being 
 | **Evidence & Source Attribution** | Connect important claims to actual repository evidence. | `backend/app/main.py`, line 10 | `Done` |
 | **Anti-Hallucination Handling** | Refuse to invent information when the repository doesn't provide enough evidence. | “I couldn't find evidence for JWT implementation.” | `Done` |
 | **Unknown Detection** | Explicitly identify information that could not be verified. | “Unknown: no evidence of GitHub OAuth implementation.” | `Done` |
+| **Adaptive Technicality Calibration** | Internal 1–10 depth point calibration dynamically tailoring explanations from conceptual to low-level implementation. | “Explain simpler” vs “Explain AST bytecode & endpoints” | `Done` |
+| **Cross-Repository Intelligence** | Cross-repository context discovery and relationship tracing across companion services (frontend, backend, shared packages). | “Is layout.tsx connected to which endpoint in the backend repo?” | `Done` |
 
 ---
 
@@ -37,7 +39,6 @@ This document tracks what **Knowledge already does**, what is **currently being 
 |---|---|---|---|
 | **Persistent Repository Memory** | Retain useful engineering context so Knowledge doesn't repeatedly rediscover the same information. | “We already understood authentication. Now explain authorization.” | `Future` |
 | **Interactive Repository Learning** | Let contributors progressively learn a repository through an interactive KT experience. | “Teach me this repository in 30 minutes.” | `Future` |
-| **Cross-Repository Intelligence** | Understand relationships between multiple repositories and shared systems. | `Frontend Repo → Backend Repo → Shared Package` | `Future` |
 | **Team Engineering Intelligence** | Help teams understand project areas, contribution activity, and engineering context. | “Which parts of this project are actively being worked on?” | `Future` |
 | **Engineering Context Platform** | Evolve Knowledge from a GitHub bot into a general engineering-context layer for developers. | “I'm new here. Teach me the repo, explain this issue, trace the code, and explain the PR solving it.” | `Future` |
 
@@ -53,6 +54,10 @@ Issue + PR Context
         ↓
 Evidence Grounding
         ↓
+Adaptive Technicality Calibration
+        ↓
+Cross-Repository Intelligence
+        ↓
 ONGOING
 Human Engineering KT
         ↓
@@ -66,8 +71,6 @@ FUTURE
 Repository Memory
         ↓
 Interactive Repository Learning
-        ↓
-Cross-Repository Intelligence
         ↓
 Team Engineering Intelligence
         ↓
