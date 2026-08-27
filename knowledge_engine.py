@@ -23,6 +23,8 @@ from dotenv import load_dotenv
 import providers
 import memory_store
 import retry
+from adaptive_depth import AdaptiveDepthEngine
+from multi_repo import MultiRepoConfig
 
 
 # Load environment variables
@@ -285,22 +287,14 @@ class GitHubClient:
     def fetch_file_content(
         token: str, owner: str, repo: str, file_path: str, ref: Optional[str] = None
     ) -> Optional[str]:
+        params = {"ref": ref} if ref else None
         try:
-            params = {"ref": ref} if ref else None
-            with httpx.Client(timeout=10.0) as client:
-                res = client.get(
-                    f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}",
-                    headers=GitHubClient._get_headers(token),
-                    params=params,
-                )
-                res.raise_for_status()
-                data = res.json()
-                if "content" in data and data.get("encoding") == "base64":
-                    decoded_bytes = base64.b64decode(data["content"])
-                    return decoded_bytes.decode("utf-8", errors="replace")
-            res = GitHubClient._get(f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}", token)
+            res = GitHubClient._get(
+                f"{GITHUB_API_BASE}/repos/{owner}/{repo}/contents/{file_path}",
+                token,
+                params=params,
+            )
             if res is None:
-
                 return None
             res.raise_for_status()
             data = res.json()
@@ -359,6 +353,11 @@ class GitHubClient:
         return None
 
     @staticmethod
+    def fetch_commit_sha(token: str, owner: str, repo: str, branch: Optional[str] = None) -> Optional[str]:
+        """Fetches the latest commit SHA for the target or default branch (alias)."""
+        return GitHubClient.fetch_latest_commit_sha(token, owner, repo, branch)
+
+    @staticmethod
     def post_issue_comment(token: str, owner: str, repo: str, issue_number: int, comment_body: str) -> bool:
         try:
             res = GitHubClient._post(
@@ -384,18 +383,9 @@ class RelationshipExtractor:
     """Parses text for explicit and implicit bidirectional relationships between Issues, PRs, and Files."""
 
     @staticmethod
-    def extract_referenced_prs(text: str) -> List[int]:
+    def _extract_position_ordered_numbers(text: str, patterns: List[str]) -> List[int]:
         if not text:
             return []
-        patterns = [
-            r'(?:PR|pr|Pull Request|pull)\s*#(\d+)',
-            r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
-            r'pull\/(\d+)'
-        ]
-        # Position-ordered, not numerically sorted: callers that take index 0
-        # as "the first referenced PR" (intent classification, the bidirectional
-        # evidence chain) mean the first one mentioned in the text, and
-        # "Fixes #43; Closes #12" must resolve to #43, not the lower number.
         matches: List[tuple] = []
         for pat in patterns:
             for m in re.finditer(pat, text, re.IGNORECASE):
@@ -413,30 +403,22 @@ class RelationshipExtractor:
         return ordered
 
     @staticmethod
+    def extract_referenced_prs(text: str) -> List[int]:
+        patterns = [
+            r'(?:PR|pr|Pull Request|pull)\s*#(\d+)',
+            r'github\.com\/[^\/]+\/[^\/]+\/pull\/(\d+)',
+            r'pull\/(\d+)'
+        ]
+        return RelationshipExtractor._extract_position_ordered_numbers(text, patterns)
+
+    @staticmethod
     def extract_referenced_issues(text: str) -> List[int]:
-        if not text:
-            return []
         patterns = [
             r'(?:Fixes|Closes|Resolves|Issue|issue)\s*#(\d+)',
             r'github\.com\/[^\/]+\/[^\/]+\/issues\/(\d+)',
             r'issues\/(\d+)'
         ]
-        # Same position-ordered contract as extract_referenced_prs.
-        matches: List[tuple] = []
-        for pat in patterns:
-            for m in re.finditer(pat, text, re.IGNORECASE):
-                try:
-                    matches.append((m.start(), int(m.group(1))))
-                except ValueError:
-                    pass
-        matches.sort(key=lambda pair: pair[0])
-        seen = set()
-        ordered: List[int] = []
-        for _, num in matches:
-            if num not in seen:
-                seen.add(num)
-                ordered.append(num)
-        return ordered
+        return RelationshipExtractor._extract_position_ordered_numbers(text, patterns)
 
     @staticmethod
     def extract_referenced_files(text: str) -> List[str]:
@@ -456,14 +438,54 @@ class CitationFormatter:
         return f"https://github.com/{owner}/{repo}/blob/{ref}/{file_path}"
 
     @staticmethod
-    def build_citations_section(owner: str, repo: str, commit_sha: Optional[str], files_read: List[str]) -> str:
-        if not files_read:
+    def build_citations_section(
+        owner: str,
+        repo: str,
+        commit_sha: Optional[str],
+        files_read: List[str],
+        cross_repo_files: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> str:
+        sections = []
+        if files_read:
+            lines = ["\n\n### 📚 Referenced Files & Citations"]
+            for f in sorted(files_read):
+                link = CitationFormatter.format_file_permalink(owner, repo, commit_sha, f)
+                lines.append(f"- [`{f}`]({link})")
+            sections.append("\n".join(lines))
+
+        if cross_repo_files:
+            cross_lines = ["### 📚 Related Repository Citations"]
+            has_cross = False
+            for repo_key, repo_info in cross_repo_files.items():
+                if "/" in repo_key:
+                    rel_owner, rel_repo = repo_key.split("/", 1)
+                else:
+                    rel_owner, rel_repo = owner, repo_key
+
+                rel_sha = None
+                rel_files = []
+                if isinstance(repo_info, dict):
+                    rel_sha = repo_info.get("sha")
+                    rel_files = (
+                        repo_info.get("files")
+                        or repo_info.get("files_read")
+                        or list(repo_info.get("fetched_files", {}).keys())
+                    )
+                elif isinstance(repo_info, list):
+                    rel_files = repo_info
+
+                for f in sorted(rel_files):
+                    has_cross = True
+                    link = CitationFormatter.format_file_permalink(rel_owner, rel_repo, rel_sha, f)
+                    label_sha = f"@{rel_sha[:7]}" if rel_sha else ""
+                    cross_lines.append(f"- [`{rel_owner}/{rel_repo}{label_sha}:{f}`]({link})")
+
+            if has_cross:
+                sections.append("\n\n" + "\n".join(cross_lines))
+
+        if not sections:
             return ""
-        lines = ["\n\n### 📚 Referenced Files & Citations"]
-        for f in sorted(files_read):
-            link = CitationFormatter.format_file_permalink(owner, repo, commit_sha, f)
-            lines.append(f"- [`{f}`]({link})")
-        return "\n".join(lines)
+        return "".join(sections)
 
 
 class IntentCategory:
@@ -550,7 +572,7 @@ class ContextRetriever:
         keywords = intent_info.get("keywords", [])
 
         knowledge_rules = GitHubClient.fetch_file_content(token, owner, repo, "KNOWLEDGE.md")
-        commit_sha = GitHubClient.fetch_latest_commit_sha(token, owner, repo)
+        commit_sha = GitHubClient.fetch_commit_sha(token, owner, repo) or GitHubClient.fetch_latest_commit_sha(token, owner, repo)
         fetched_files = {}
         if knowledge_rules:
             fetched_files["KNOWLEDGE.md"] = knowledge_rules[:3000]
@@ -583,18 +605,21 @@ class ContextRetriever:
                 evidence["diff"] = diff[:3500] if diff else None
 
                 # Fetch content of key changed files
+                pr_head_sha = ((pr or {}).get("head") or {}).get("sha")
                 for f in (changed_files or [])[:5]:
                     filename = f.get("filename")
                     if filename and filename not in fetched_files:
-                        content = GitHubClient.fetch_file_content(token, owner, repo, filename)
+                        content = GitHubClient.fetch_file_content(
+                            token, owner, repo, filename, ref=pr_head_sha
+                        )
                         if content:
                             fetched_files[filename] = content[:2500]
 
                 # Follow the PR -> Issue relationship: "Fixes #43" in the PR
                 # body/comments means issue #43's own context belongs in the
                 # evidence too, not just the PR's own description.
-                pr_text = f"{(pr or {}).get('body', '')}\n" + "\n".join(
-                    c.get("body", "") for c in (pr_comments or [])
+                pr_text = f"{(pr or {}).get('body') or ''}\n" + "\n".join(
+                    (c.get("body") or "") for c in (pr_comments or [])
                 )
                 ref_issues = RelationshipExtractor.extract_referenced_issues(pr_text)
                 evidence["referenced_issues"] = ref_issues
@@ -695,7 +720,7 @@ class ContextRetriever:
 
             combined_text = query
             if evidence.get("issue"):
-                combined_text = f"{evidence['issue'].get('title', '')}\n{evidence['issue'].get('body', '')}\n" + "\n".join([c.get('body', '') for c in evidence.get("comments", [])])
+                combined_text = f"{(evidence['issue'].get('title') or '')}\n{(evidence['issue'].get('body') or '')}\n" + "\n".join([(c.get('body') or '') for c in evidence.get("comments", [])])
             
             ref_prs = RelationshipExtractor.extract_referenced_prs(combined_text)
             ref_files = RelationshipExtractor.extract_referenced_files(combined_text)
@@ -735,6 +760,75 @@ class ContextRetriever:
                 if readme and "README.md" not in fetched_files:
                     fetched_files["README.md"] = readme[:2500]
 
+        # Multi-Repository Context Discovery
+        if MultiRepoConfig.is_cross_repo_query(query):
+            related_repos = MultiRepoConfig.parse_related_repositories(owner, repo, knowledge_rules)
+            cross_repo_evidence = {}
+            for rel in related_repos[:3]:
+                rel_owner = rel.get("owner", owner)
+                rel_repo = rel.get("repo", "")
+                rel_desc = rel.get("description", "")
+                if not rel_repo:
+                    continue
+                repo_key = f"{rel_owner}/{rel_repo}"
+
+                rel_sha = GitHubClient.fetch_commit_sha(token, rel_owner, rel_repo) or GitHubClient.fetch_latest_commit_sha(token, rel_owner, rel_repo)
+                rel_tree = GitHubClient.fetch_repo_tree(token, rel_owner, rel_repo) or []
+
+                # Find relevant candidate files in companion repository
+                target_keywords = list(set(keywords + [
+                    "route", "routes", "router", "routers", "endpoint", "endpoints",
+                    "api", "main", "app", "server", "handler", "handlers",
+                    "controller", "controllers", "service", "services", "schema", "schemas"
+                ]))
+                query_words = re.findall(r"[a-zA-Z0-9_\-\.]+", query.lower())
+                for w in query_words:
+                    if len(w) >= 3 and w not in ["the", "and", "for", "with", "which", "what", "how", "repo", "backend", "frontend"]:
+                        if w not in target_keywords:
+                            target_keywords.append(w)
+
+                scored_files = []
+                for path in rel_tree:
+                    path_lower = path.lower()
+                    if any(p in path_lower for p in [".github/", "node_modules/", "vendor/", "__pycache__/", "venv/", ".git/"]):
+                        continue
+                    score = 0
+                    for kw in target_keywords:
+                        if kw in path_lower:
+                            score += 2 if kw in path_lower.split("/")[-1] else 1
+                    if score > 0:
+                        scored_files.append((score, path))
+
+                scored_files.sort(key=lambda x: x[0], reverse=True)
+                candidate_files = [p for _, p in scored_files[:3]]
+
+                if not candidate_files:
+                    for path in rel_tree:
+                        if not any(p in path.lower() for p in [".github/", "node_modules/", "vendor/", "__pycache__/", "venv/"]):
+                            candidate_files.append(path)
+                            if len(candidate_files) >= 3:
+                                break
+
+                rel_fetched_files = {}
+                rel_files_read = []
+                for path in candidate_files:
+                    content = GitHubClient.fetch_file_content(token, rel_owner, rel_repo, path, ref=rel_sha)
+                    if content:
+                        rel_fetched_files[path] = content[:2500]
+                        rel_files_read.append(path)
+
+                cross_repo_evidence[repo_key] = {
+                    "owner": rel_owner,
+                    "repo": rel_repo,
+                    "sha": rel_sha,
+                    "description": rel_desc,
+                    "files_read": rel_files_read,
+                    "fetched_files": rel_fetched_files,
+                }
+
+            if cross_repo_evidence:
+                evidence["cross_repo_evidence"] = cross_repo_evidence
+
         return evidence
 
 
@@ -747,7 +841,12 @@ class ContextExplainer:
     """Formats system & user prompts aligned with KNOWLEDGE.md investigation philosophy."""
 
     @staticmethod
-    def build_system_prompt(intent: str, knowledge_rules: Optional[str], author: str = "Contributor") -> str:
+    def build_system_prompt(
+        intent: str,
+        knowledge_rules: Optional[str],
+        author: str = "Contributor",
+        depth_score: Optional[int] = None
+    ) -> str:
         base = (
             "You are @Knowledge, an engineering context assistant for this repository.\n"
             "Act like an experienced senior engineer sitting beside @{author}, helping them understand a real codebase.\n\n"
@@ -838,6 +937,10 @@ class ContextExplainer:
                 "- Investigate before answering — don't just match filenames."
             )
 
+        if depth_score is not None:
+            depth_guidance = AdaptiveDepthEngine().get_prompt_guidance(depth_score)
+            base += f"\n\n=== INTERNAL DEPTH GUIDANCE ===\n{depth_guidance}\n===============================\n"
+
         return base.replace("{author}", author)
 
     @staticmethod
@@ -906,11 +1009,25 @@ class ContextExplainer:
                     )
 
         if fetched_files:
-            prompt += "\n--- EVIDENCE FILES ---\n"
+            evidence_file_lines = []
             for fname, fcontent in fetched_files.items():
                 if fname == "KNOWLEDGE.md":
                     continue
-                prompt += f"\nFile [{fname}]:\n{fcontent}\n"
+                evidence_file_lines.append(f"\nFile [{fname}]:\n{fcontent}\n")
+            if evidence_file_lines:
+                prompt += "\n--- EVIDENCE FILES ---\n" + "".join(evidence_file_lines)
+
+        cross_repo = evidence.get("cross_repo_evidence")
+        if cross_repo:
+            prompt += "\n--- CROSS-REPOSITORY EVIDENCE ---\n"
+            for rel_name, rel_data in cross_repo.items():
+                rel_desc = rel_data.get("description", "")
+                desc_str = f" ({rel_desc})" if rel_desc else ""
+                prompt += f"Companion Repository: {rel_name}{desc_str}\n"
+                rel_fetched = rel_data.get("fetched_files", {})
+                for rf_name, rf_content in rel_fetched.items():
+                    prompt += f"\nFile [{rel_name}:{rf_name}]:\n{rf_content}\n"
+                prompt += "\n"
 
         prompt += (
             f"\nAnswer @{query_author}'s question naturally. "
@@ -954,7 +1071,8 @@ class KnowledgeAgent:
         issue_number: Optional[int] = None,
         pr_number: Optional[int] = None,
         provider_name: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        depth_score: Optional[int] = None
     ) -> Dict[str, Any]:
         # 1. Intent Classification
         intent_info = IntentClassifier.classify(query)
@@ -983,10 +1101,19 @@ class KnowledgeAgent:
             }
 
         # 3. Intent-Specific Prompt Synthesis
+        if depth_score is None:
+            history_texts = []
+            if evidence.get("comments"):
+                history_texts.extend([c.get("body", "") for c in evidence["comments"] if isinstance(c, dict)])
+            if evidence.get("pr_comments"):
+                history_texts.extend([c.get("body", "") for c in evidence["pr_comments"] if isinstance(c, dict)])
+            depth_score = AdaptiveDepthEngine().calculate_depth(query, history=history_texts if history_texts else None)
+
         system_prompt = ContextExplainer.build_system_prompt(
             intent=intent_info["intent"],
             knowledge_rules=evidence.get("knowledge_rules"),
-            author=author
+            author=author,
+            depth_score=depth_score
         )
         user_prompt = ContextExplainer.build_user_prompt(evidence, query_author=author)
 
@@ -999,6 +1126,7 @@ class KnowledgeAgent:
 
 
         files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
+        cross_repo_evidence = evidence.get("cross_repo_evidence")
 
         # Record this finding for next time. Only worth storing when the
         # investigation actually turned up something -- an empty-evidence
@@ -1008,12 +1136,14 @@ class KnowledgeAgent:
         # check issue_fetch_ok explicitly rather than evidence["issue"]
         # truthiness, which the placeholder always satisfies.
         has_issue_evidence = evidence.get("issue_fetch_ok") is True
-        if files_read or has_issue_evidence or evidence.get("pr"):
+        if files_read or has_issue_evidence or evidence.get("pr") or cross_repo_evidence:
             memory.put(
                 owner, repo, intent_info["intent"], intent_info.get("keywords", []),
                 summary=llm_answer, files_read=files_read, commit_sha=evidence.get("commit_sha"),
             )
-        citations_text = CitationFormatter.build_citations_section(owner, repo, evidence.get("commit_sha"), files_read)
+        citations_text = CitationFormatter.build_citations_section(
+            owner, repo, evidence.get("commit_sha"), files_read, cross_repo_files=cross_repo_evidence
+        )
 
         discussion_comments = [
             *evidence.get("comments", []),
@@ -1024,6 +1154,7 @@ class KnowledgeAgent:
             "directives": [c.get("body", "") for c in discussion_comments if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
+            "cross_repo_evidence": cross_repo_evidence,
             "intent": intent_info["intent"],
             "evidence": evidence
         }
@@ -1032,6 +1163,7 @@ class KnowledgeAgent:
             "query": query,
             "author": author,
             "intent": intent_info["intent"],
+            "depth_score": depth_score,
             "answer": llm_answer,
             "citations": citations_text,
             "commit_sha": evidence.get("commit_sha"),

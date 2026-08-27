@@ -35,8 +35,9 @@ class TestWebhookSecurity(unittest.TestCase):
 
     def test_verify_signature_no_secret_configured(self):
         with patch.dict(os.environ, {"GITHUB_WEBHOOK_SECRET": ""}):
-            # When no secret is configured, defaults to allowing
-            self.assertTrue(webhook_server.verify_signature(self.payload, None))
+            # When no secret is configured, fails closed for security
+            self.assertFalse(webhook_server.verify_signature(self.payload, None))
+            self.assertFalse(webhook_server.verify_signature(self.payload, "sha256=somesig"))
 
 
 if __name__ == "__main__":
