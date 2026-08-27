@@ -1,261 +1,318 @@
 ---
 description: >
-  Use Knowledge before planning or implementing a change in an unfamiliar GitHub
-  repository. Knowledge supplies evidence-backed engineering context; it does
-  not choose or generate the implementation.
+  Give this prompt to an LLM or coding agent to install Knowledge-Agent in the
+  repository it is currently working in.
 ---
 
-# Knowledge — LLM Integration Contract
+# Knowledge-Agent — automated integration prompt
 
-This document is for an LLM, coding agent, or tool orchestrator that uses
-**Knowledge** while helping a contributor work on a GitHub issue or pull
-request.
+Copy this entire document into Cursor, GitHub Copilot, Claude Code, or another
+repository-aware coding agent. The agent must execute the instructions below in
+the developer's repository. It should make the smallest safe set of changes,
+show the resulting files, and explain anything that still requires a human.
 
-## Mission and boundary
+## 1. Role and objective
 
-Knowledge is a **pre-implementation engineering-context layer**. Its job is to
-reduce avoidable guesswork before code is planned or changed. It investigates
-the issue, repository evidence, linked discussion, and connected implementation
-so that a contributor can make an informed decision.
+You are the automated repository integration assistant for
+[Knowledge-Agent](https://github.com/PrithvijitBose/Knowledge-Agent). Your
+objective is to install the Knowledge GitHub bot into the repository you are
+currently operating on. A successful integration:
 
-Knowledge is **not** an implementation planner, code generator, autonomous
-committer, or substitute for a maintainer's product decision. The integrating
-agent remains responsible for deciding whether the evidence supports a proposal
-and for obtaining any required approval.
+1. inspects the repository before changing it;
+2. obtains the canonical Knowledge runtime files;
+3. creates `.github/workflows/knowledge.yml`;
+4. creates a repository-specific `KNOWLEDGE.md` rulebook; and
+5. gives the maintainer an exact secrets checklist and a smoke-test procedure.
 
-Use Knowledge before you:
+Knowledge responds to `@Knowledge`, `@knowledge`, `/Knowledge`, and `/knowledge`
+comments on issues and pull requests. It gathers repository context and posts an
+answer back to GitHub; it does not autonomously edit, commit, or merge code.
 
-- propose an implementation approach for an unfamiliar issue;
-- edit a subsystem whose behavior or ownership is unclear;
-- infer intent from an issue title, filename, or README alone; or
-- treat a prior issue, PR, or agent summary as current fact.
+## 2. Rules before making changes
 
-Do not use Knowledge as ceremony for mechanical, already-understood changes.
-For example, a maintainer-provided one-line typo correction in a known document
-does not need a repository investigation.
+- Work only in the current repository. Do not create a second checkout or
+  modify the upstream Knowledge-Agent repository.
+- Inspect the repository layout, package managers, default branch, existing
+  GitHub workflows, contribution guidance, and test commands first.
+- Never overwrite an existing file silently. If a target workflow or runtime
+  file already exists, compare it with the intended integration, preserve
+  compatible content, and ask the developer before replacing incompatible
+  content.
+- Do not invent secret names. The workflow may use only the names documented in
+  this prompt (`MISTRAL_API_KEY`, `GEMINI_API_KEY`, and the built-in
+  `GITHUB_TOKEN`).
+- Never put an API key, GitHub token, or other credential in a committed file,
+  generated example, command history, or workflow literal.
+- Do not claim a file was downloaded, a workflow ran, or a secret was configured
+  unless you actually verified it. If network access is unavailable, report the
+  exact blocked step and leave a reproducible fallback command.
+- Keep unrelated user changes intact and do not reformat unrelated files.
 
-## Required operating model
+## 3. Execute the integration in this order
 
-Treat the repository's source, issue/PR discussion, and documented rules as
-evidence with different purposes:
+### Step 1 — inspect the target repository
 
-| Evidence | What it can establish |
+Determine and record:
+
+- the repository owner/name and default branch;
+- the primary language and package manager(s);
+- the application entry points and important source directories;
+- existing `.github/workflows/*.yml` or `.yaml` files and their permissions;
+- contribution, security, code-ownership, and generated-file rules; and
+- the commands used by the project to install dependencies and run tests.
+
+Use the repository's existing conventions. A Python project does not need a new
+package manager, lockfile, virtual environment, or application dependency just
+to run the action.
+
+### Step 2 — obtain the canonical runtime files
+
+Use the upstream repository's default branch (or a specific inspected commit)
+as the source. Prefer the GitHub API, a normal raw-file request, or the
+repository's existing download tooling; do not paste an unverified rewrite of
+the engine. The canonical source repository is:
+
+`https://github.com/PrithvijitBose/Knowledge-Agent`
+
+Resolve the upstream default branch to a commit before downloading when the
+host permits it, use that revision for every runtime file, and record the SHA in
+the completion report. This makes a later installation reproducible even if the
+upstream branch moves.
+
+Place these sibling files at the target repository root because
+`knowledge_engine.py` imports the other modules directly:
+
+| File | Purpose |
 | --- | --- |
-| Source code and tests | Current implemented behavior and interactions |
-| Issue/PR text and comments | Requested outcome, decisions, constraints, and historical context |
-| Repository documentation | Stated intent, setup, and contribution policy |
-| File and directory names | Leads to investigate; never proof of behavior |
-| Earlier Knowledge output or agent memory | A lead that must be verified against current evidence |
+| `knowledge_engine.py` | GitHub event handling, evidence retrieval, and response orchestration |
+| `providers.py` | Mistral/Gemini and other provider adapters |
+| `memory_store.py` | Persistent context memory used by the cache |
+| `retry.py` | Bounded retry/backoff for network requests |
 
-Do not turn a filename match into an architectural claim. Do not equate a
-README statement with current behavior when source evidence disagrees. Do not
-fill an evidence gap with a conventional implementation pattern.
+Before copying each file, check whether the target already has one. Preserve a
+compatible local version when possible; otherwise stop and show the diff that
+needs maintainer approval. Do not copy the upstream repository's dashboard,
+tests, `.env`, or development-only files into the application unless the
+developer explicitly asks for them.
 
-## When and how to query Knowledge
-
-### 1. Gather a precise request
-
-Supply as much of the following as is available:
-
-- repository owner and name;
-- issue or pull-request number and URL;
-- issue title, body, and relevant comments if the integration cannot retrieve
-  them itself;
-- the contributor's goal or question (for example, *"What must I understand
-  before fixing this?"*);
-- any known files, failing tests, branch/commit, or constraints; and
-- whether the agent needs issue understanding, PR understanding, architecture,
-  onboarding, contribution guidance, feature flow, or historical context.
-
-The issue URL or description is the minimum useful input. If it is ambiguous,
-include the ambiguity in the question; do not silently replace it with an
-assumed requirement.
-
-### 2. Ask a pre-implementation question
-
-When Knowledge is installed as the GitHub bot, post one focused request on the
-issue or PR:
-
-```text
-@Knowledge What does this issue require, which existing implementation path is
-most relevant, which repository constraints apply, and what remains unknown
-before I propose a change?
-```
-
-`/knowledge` is an equivalent trigger. The local CLI integration can make the
-same request after the repository's token and provider configuration are set:
+If a command-line download is useful, adapt it to the host operating system.
+These examples are illustrative and must use the inspected upstream revision:
 
 ```bash
-python knowledge_engine.py \
-  --owner <owner> \
-  --repo <repository> \
-  --issue <number> \
-  --comment "@Knowledge <focused question>" \
-  --author <contributor>
+mkdir -p .github/workflows
+curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/knowledge_engine.py -o knowledge_engine.py
+curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/providers.py -o providers.py
+curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/memory_store.py -o memory_store.py
+curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/retry.py -o retry.py
 ```
 
-Use follow-up questions when the first answer exposes a material gap. Prefer a
-specific question over asking for a generic repository overview. For example,
-ask where a value enters a flow and where it is consumed, or why a linked PR
-changed a particular file.
+Do not run these commands with `-k`, suppress certificate validation, or write
+over existing files without the comparison/approval step above.
 
-### 3. Read and validate the response
+### Step 3 — create `.github/workflows/knowledge.yml`
 
-Knowledge normally returns a natural-language engineering handoff with evidence
-files and repository permalinks. Extract the working brief below from that
-answer, but do **not** force Knowledge itself into a rigid response template.
+Create the directory if it is missing. The generated workflow must be
+equivalent to the following and must retain any repository-specific checkout or
+permissions requirements discovered in Step 1:
 
-Before relying on a claim:
+```yaml
+name: Knowledge AI Bot
 
-1. Follow the cited file or discussion when the claim materially affects the
-   implementation.
-2. Confirm that the cited implementation is on the relevant current revision.
-3. Separate an explicit fact from an implementation inference and from an
-   unknown.
-4. Treat a missing citation or inaccessible file as an evidence gap, not as
-   confirmation.
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
 
-If Knowledge cannot run, cannot access the repository, or returns insufficient
-evidence, report that limitation. A coding agent may perform the equivalent
-bounded, evidence-first investigation itself, but must label that it is doing
-so and must not claim that Knowledge verified the result.
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
-## Required pre-implementation brief
+jobs:
+  knowledge_bot:
+    if: >-
+      (contains(github.event.comment.body, '@Knowledge') ||
+      contains(github.event.comment.body, '@knowledge') ||
+      contains(github.event.comment.body, '/Knowledge') ||
+      contains(github.event.comment.body, '/knowledge')) &&
+      github.event.comment.user.type != 'Bot'
+    runs-on: ubuntu-latest
 
-Before proposing code changes, the integrating agent must produce a concise
-brief containing these fields. Use `Unknown` rather than guessing.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-| Field | Required content |
-| --- | --- |
-| Issue interpretation | The requested outcome, scope, and explicit non-goals, grounded in the issue and discussion |
-| Evidence summary | What the inspected source, tests, docs, and linked issues/PRs establish |
-| Relevant implementation path | A short, ordered set of files/components to read, with why each belongs in the path and how they connect |
-| Constraints | Maintainer directives, contribution rules, compatibility/security expectations, and documentation-versus-code discrepancies |
-| Existing examples | Similar implementation, PR, test, or convention to study; say `None found` only after a bounded search |
-| Unknowns and assumptions | Facts not established, assumptions requiring validation, and their impact |
-| Maintainer decisions needed | Specific questions that block a safe proposal, with the decision each answer would unlock |
-| Confidence and citations | Confidence appropriate to the evidence, plus links/paths for material claims |
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-The brief is a decision aid, not a design approval. Do not begin implementation
-when a material unknown changes the intended behavior, public API, security
-model, compatibility promise, or ownership boundary.
+      - name: Install Knowledge dependencies
+        run: python -m pip install --disable-pip-version-check httpx python-dotenv
 
-## Constraints that the integrating agent must preserve
+      - name: Restore Knowledge memory cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .knowledge
+          key: knowledge-memory-${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            knowledge-memory-${{ github.repository }}-
 
-1. **Evidence first.** Inspect relevant source before asserting behavior. Trace
-   actual call, data, or dependency relationships; do not merely list keyword
-   matches.
-2. **Bounded investigation.** Expand from the issue to connected code, tests,
-   references, and linked PRs as needed. Do not indiscriminately read the whole
-   repository.
-3. **Truthful uncertainty.** Clearly mark evidence, inference, and unknowns.
-   Never convert a plausible guess into a requirement.
-4. **Issue discussion matters.** Treat maintainer directions in issue/PR
-   comments as constraints when they are explicit. If comments conflict, flag
-   the conflict rather than selecting a winner.
-5. **Current code wins for behavior.** Documentation expresses intent; source
-   and tests establish current behavior. Flag any conflict for the contributor
-   or maintainer.
-6. **No silent boundary crossing.** Do not propose or implement a change to a
-   protected or risk-sensitive area without explicitly flagging it and obtaining
-   the appropriate maintainer confirmation.
-7. **No invented protection list.** A repository may not declare formal
-   protected modules. In that case, do not claim one exists. Treat the areas
-   below as risk-sensitive defaults, and ask maintainers to confirm ownership
-   and the required review path.
-8. **Keep control with people.** Do not present the context brief as a
-   maintainer decision, approval, or authorization to merge.
+      - name: Run Knowledge bot
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KNOWLEDGE_MEMORY_PATH: .knowledge/memory.json
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          REPO_NAME: ${{ github.event.repository.name }}
+          ISSUE_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number }}
+        run: |
+          python knowledge_engine.py \
+            --owner "$REPO_OWNER" \
+            --repo "$REPO_NAME" \
+            --issue "$ISSUE_NUMBER" \
+            --comment "$COMMENT_BODY" \
+            --author "$COMMENT_AUTHOR"
 
-### Risk-sensitive defaults for this repository
+      - name: Save Knowledge memory cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .knowledge
+          key: knowledge-memory-${{ github.repository }}-${{ github.run_id }}-${{ github.run_attempt }}
+```
 
-Knowledge-Agent does not currently publish a formal protected-module manifest.
-Until maintainers define one, flag these areas before proposing a behavior
-change:
+The cache must restore and save `.knowledge`; otherwise each GitHub-hosted
+runner loses Knowledge's memory after the job. Keep the unique run/attempt key
+and repository restore prefix so a rerun can save updated state.
 
-- GitHub authentication, credentials, token handling, and webhook verification
-  (`github_auth.py`, `webhook_server.py`, and configuration);
-- untrusted input and command execution boundaries;
-- LLM provider behavior and network-facing adapters (`providers.py`);
-- persistent context/memory behavior and compatibility shims
-  (`memory_store.py`, `pr_context.py`);
-- the evidence and prompt contract (`KNOWLEDGE.md`, `knowledge_engine.py`); and
-- GitHub Action or deployment behavior (`.github/workflows/`).
+If the repository already has a workflow with the same name/path, do not
+overwrite it. Present a minimal patch or ask which workflow should own the
+trigger. If the project requires pinned action SHAs, apply that local policy to
+the four actions above and report the pins used.
 
-This is a risk flag, not a ban. The agent should state the affected boundary,
-the expected impact, and the specific approval or policy clarification needed.
+### Step 4 — create `KNOWLEDGE.md`
 
-## Mandatory maintainer-deferral rules
+Generate a clean, repository-specific rulebook at the target root. Read the
+target README, contribution/security files, source entry points, package
+manifests, test configuration, and workflow files before filling it in. Do not
+copy Knowledge-Agent's own rulebook verbatim and do not invent architecture or
+protected paths.
 
-Stop and ask a maintainer a focused question instead of guessing when any of the
-following is true:
+If `KNOWLEDGE.md` already exists, extend it non-destructively with the missing
+sections and preserve its verified project rules; ask before replacing content
+that conflicts with the generated starter.
 
-- the issue has two or more plausible interpretations with materially different
-  behavior or scope;
-- the desired product behavior, acceptance criteria, or non-goals are missing;
-- maintainer comments, documentation, tests, or current code conflict;
-- a public API, stored data format, permission model, security control, or
-  backwards-compatibility behavior may change;
-- the change reaches a risk-sensitive area and repository policy or ownership is
-  not explicit;
-- no evidence-backed existing pattern exists and the choice would create a new
-  architectural convention; or
-- the evidence needed to validate a material claim is inaccessible or absent.
+Use this shape, replacing every bracketed value with verified repository facts:
 
-A good deferral is answerable and decision-oriented:
+~~~markdown
+# Repository Knowledge
+
+This file gives Knowledge repository-specific context and guardrails. Keep it
+short, factual, and update it when the architecture or contribution policy
+changes.
+
+## Repository architecture
+
+- Purpose: [one verified sentence from the README or source]
+- Runtime/entry points: [verified paths and what calls them]
+- Main components: [paths and their responsibilities]
+- Important data or request flow: [short evidence-backed flow]
+
+## Protected paths and modules
+
+- [path]: [why it is sensitive and which maintainer/review rule applies]
+- If none are formally declared: `No protected paths are formally declared;
+  ask a maintainer before changing security, authentication, data migrations,
+  public APIs, deployment, or other high-impact boundaries.`
+
+## Contribution rules
+
+- [verified branch, review, ownership, formatting, or generated-file rule]
+- [verified security or secret-handling rule]
+- [verified documentation or compatibility rule]
+
+## Testing commands
 
 ```text
-The issue asks for X, but the repository evidence supports both A and B. A
-changes the public command behavior; B preserves it but limits the feature.
-Which behavior is intended, and should the existing command remain compatible?
+[exact install command, if needed]
+[exact lint/type-check command, if present]
+[exact unit/integration test command]
 ```
 
-Do not defer for routine implementation details that are already decided by
-clear code, tests, repository rules, or explicit issue instructions.
+## Unknowns
 
-## Example prompts
+- [facts maintainers still need to document; use `None known` only after
+  checking the repository]
+~~~
 
-### First pass on an issue
+Use `Unknown` or a clearly marked TODO for information that cannot be verified.
+The rulebook is guidance injected into Knowledge's prompts; it is not a secret
+store, a CODEOWNERS replacement, or permission to bypass repository review.
 
-```text
-@Knowledge I am preparing to work on this issue. Explain the requested outcome,
-the relevant implementation flow, the files I should inspect in order and why,
-any maintainer constraints, comparable code or tests, and what cannot be
-verified from repository evidence.
-```
+### Step 5 — validate the integration
 
-### Clarifying an ambiguous issue
+Run only safe, relevant checks available in the target repository:
 
-```text
-@Knowledge Identify the issue statements or discussion comments that leave the
-acceptance criteria ambiguous. For each ambiguity, show the relevant evidence,
-the implementation paths it changes, and a concise maintainer question.
-```
+- validate YAML syntax with an installed YAML parser or the repository's CI
+  tooling (do not claim validation if no parser is available);
+- verify that all four runtime files exist side by side and compile/import
+  without executing a provider call;
+- check that the workflow references the exact secret and environment names;
+- run `git diff --check`; and
+- run the repository's documented tests when practical.
 
-### Studying a prior implementation
+Never send a real provider request or post a GitHub comment as part of an
+unannounced validation step. Do not log secret values.
 
-```text
-@Knowledge This issue references PR #<number>. Trace the relationship from the
-issue through that PR's changed files into the current implementation. Which
-parts are still relevant, which have changed, and what constraints should a new
-fix preserve?
-```
+## 4. Maintainer setup checklist
 
-### Checking a proposed approach before coding
+After editing the files, tell the maintainer to open **Settings → Secrets and
+variables → Actions** in the target GitHub repository and add at least one of:
 
-```text
-@Knowledge I am considering changing <file/component> to achieve <outcome>.
-Based on the current implementation, what calls into it, what it calls, which
-tests or existing patterns constrain the change, and which assumptions require
-maintainer confirmation?
-```
+- `MISTRAL_API_KEY` — a Mistral API key; or
+- `GEMINI_API_KEY` — a Google Gemini API key.
 
-## Completion gate for a coding agent
+The workflow also receives GitHub's automatically provided `GITHUB_TOKEN`; the
+maintainer must not create or paste that token into a file. The workflow's
+permissions are limited to reading repository contents and writing issue/PR
+comments. If both provider secrets are set, explain which provider the fetched
+runtime selects and how to set the runtime's documented provider selector if a
+different choice is desired.
 
-An agent may move from context gathering to an implementation proposal only
-when it can explain the requested outcome, name an evidence-backed path through
-the relevant code, identify applicable constraints, and either resolve material
-unknowns or obtain maintainer direction. Its proposal must cite the evidence it
-relies on and explicitly call out any risk-sensitive boundary.
+## 5. First smoke test
 
-If this gate is not met, return the context brief and the smallest set of
-maintainer questions needed to meet it. Do not manufacture a solution.
+Once a provider secret is saved, tell the maintainer to:
+
+1. push the generated files to a branch and open/update a pull request (or use
+   an existing issue);
+2. add a comment such as
+   `@Knowledge Summarize this issue, identify the relevant files, and tell me
+   what I should verify before changing code.`; and
+3. open the Actions run for **Knowledge AI Bot** and confirm that it restored
+   the `.knowledge` cache, ran Python 3.11, and posted a reply on the same
+   issue/PR.
+
+If it does not run, check the comment spelling, the event type, workflow
+permissions, repository Actions policy, and whether the selected provider
+secret is present. Treat an API, permission, or network error as a setup issue;
+do not weaken the workflow's secret handling to make the test pass.
+
+## 6. Required completion report
+
+At the end, report:
+
+- files created, files downloaded, and files intentionally preserved;
+- the upstream revision used for the runtime files;
+- the validation commands run and their results;
+- the exact secret names still needed from the maintainer; and
+- any conflict, unsupported platform detail, or human decision that blocked a
+  fully automatic installation.
+
+Do not report “installed” until the workflow, runtime files, and rulebook are
+present and internally consistent. Do not commit changes unless the developer
+explicitly asks you to commit them.
