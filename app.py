@@ -250,10 +250,12 @@ def render_workflow_diagram():
         """, unsafe_allow_html=True)
         
     with col4:
-        st.markdown("""
+        active_provider_raw = st.session_state.get("selected_provider", "mistral")
+        active_provider_name = active_provider_raw.capitalize() if active_provider_raw else "Mistral"
+        st.markdown(f"""
         <div class="flow-card">
             <div class="flow-step">Step 4</div>
-            <div class="flow-title">Mistral AI</div>
+            <div class="flow-title">{active_provider_name} AI</div>
             <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 5px;">Summarizes answer</p>
         </div>
         """, unsafe_allow_html=True)
@@ -280,8 +282,14 @@ def main():
     render_sidebar()
     
     # Title & Header
+    all_providers = config.list_providers()
+    active_provider_raw = st.session_state.get("selected_provider", "mistral")
+    active_info = all_providers.get(active_provider_raw, {})
+    active_provider_name = active_provider_raw.capitalize() if active_provider_raw else "Mistral"
+    active_model_name = active_info.get("model", config.MISTRAL_MODEL)
+
     st.markdown('<div class="app-title">Knowledge</div>', unsafe_allow_html=True)
-    st.markdown('<div class="app-subtitle">Ask @Knowledge any question about a GitHub issue & repository — summarized by Mistral AI (mistral-small-2506) and posted back to GitHub</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="app-subtitle">Ask @Knowledge any question about a GitHub issue & repository — summarized by {active_provider_name} AI ({active_model_name}) and posted back to GitHub</div>', unsafe_allow_html=True)
     
     # Render Workflow Visual
     render_workflow_diagram()
