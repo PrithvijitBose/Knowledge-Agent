@@ -88,6 +88,14 @@ Place these sibling files at the target repository root because
 | `providers.py` | Mistral/Gemini and other provider adapters |
 | `memory_store.py` | Persistent context memory used by the cache |
 | `retry.py` | Bounded retry/backoff for network requests |
+| `adaptive_depth.py` | Adaptive evidence-retrieval depth and investigation limits |
+| `multi_repo.py` | Cross-repository context and repository-discovery helpers |
+
+After resolving the upstream revision, inspect the imports in
+`knowledge_engine.py` and its sibling modules. If the revision adds another
+local module, include that module in the same download, file-conflict checks,
+and validation steps before declaring the installation complete. The six files
+listed above are required by the current upstream implementation.
 
 Before copying each file, check whether the target already has one. Preserve a
 compatible local version when possible; otherwise stop and show the diff that
@@ -104,6 +112,8 @@ curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main
 curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/providers.py -o providers.py
 curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/memory_store.py -o memory_store.py
 curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/retry.py -o retry.py
+curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/adaptive_depth.py -o adaptive_depth.py
+curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/multi_repo.py -o multi_repo.py
 ```
 
 Do not run these commands with `-k`, suppress certificate validation, or write
@@ -260,7 +270,7 @@ Run only safe, relevant checks available in the target repository:
 
 - validate YAML syntax with an installed YAML parser or the repository's CI
   tooling (do not claim validation if no parser is available);
-- verify that all four runtime files exist side by side and compile/import
+- verify that all six runtime files exist side by side and compile/import
   without executing a provider call;
 - check that the workflow references the exact secret and environment names;
 - run `git diff --check`; and
