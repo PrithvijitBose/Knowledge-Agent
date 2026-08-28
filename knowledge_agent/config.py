@@ -55,3 +55,16 @@ def get_max_diff_chars() -> int:
         return int(os.getenv("KNOWLEDGE_MAX_DIFF_CHARS", "1500"))
     except ValueError:
         return 1500
+
+
+def get_max_diff_budget() -> int:
+    try:
+        val = os.getenv("KNOWLEDGE_MAX_DIFF_BUDGET")
+        if val is not None:
+            return int(val)
+        val2 = os.getenv("KNOWLEDGE_MAX_DIFF_CHARS")
+        if val2 is not None:
+            return int(val2)
+        return 14000
+    except ValueError:
+        return 14000

@@ -17,6 +17,7 @@ class TestPackagingAndImports(unittest.TestCase):
             "IntentCategory",
             "RelationshipExtractor",
             "ContextRetriever",
+            "truncate_diff_hunk_aware",
             "ContextExplainer",
             "ExecutionTracer",
             "KnowledgeAgent",
