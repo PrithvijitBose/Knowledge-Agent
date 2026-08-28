@@ -122,7 +122,7 @@ class ContextRetriever:
                 evidence["pr_comments"] = pr_comments or []
                 evidence["review_comments"] = review_comments or []
                 evidence["changed_files"] = changed_files or []
-                evidence["diff"] = diff[:max_file] if diff else None
+                evidence["diff"] = diff[:max_diff] if diff else None
 
                 # Fetch content of key changed files using PR head sha
                 pr_head_sha = ((pr or {}).get("head") or {}).get("sha")
