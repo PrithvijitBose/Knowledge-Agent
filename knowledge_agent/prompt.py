@@ -133,9 +133,9 @@ class ContextExplainer:
             if evidence.get("diff"):
                 prompt += f"\n\n--- UNIFIED DIFF (Truncated) ---\n```diff\n{evidence['diff']}\n```\n"
             if evidence.get("review_comments"):
-                prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][:5]])
+                prompt += "\nCode Review Comments:\n" + "\n".join([f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][-5:]])
             if evidence.get("pr_comments"):
-                prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][:5]])
+                prompt += "\nDiscussion:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][-5:]])
             if evidence.get("linked_issue"):
                 li = evidence["linked_issue"]
                 prompt += f"\n\n--- LINKED ISSUE #{li.get('number')} (referenced by this PR) ---\nTitle: {li.get('title')}\nBody:\n```\n{li.get('body')}\n```\n"
@@ -154,7 +154,7 @@ class ContextExplainer:
             iss = evidence["issue"]
             prompt += f"--- ISSUE #{iss.get('number')} ---\nTitle: {iss.get('title')}\nBody:\n```\n{iss.get('body')}\n```\n"
             if evidence.get("comments"):
-                prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][:5]])
+                prompt += "\nComments:\n" + "\n".join([f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][-5:]])
             if evidence.get("linked_pr"):
                 lpr = evidence["linked_pr"]
                 prompt += f"\n\n--- LINKED PR #{lpr.get('number')} (referenced by this issue) ---\nTitle: {lpr.get('title')}\nBody:\n```\n{lpr.get('body')}\n```\n"
