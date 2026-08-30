@@ -2,6 +2,9 @@
 
 **Knowledge** is an engineering context layer bot designed to run natively inside GitHub Issues and Pull Requests. When a contributor or maintainer comments `@Knowledge <question>` or `/knowledge <question>`, the engine classifies query intent, retrieves bounded evidence across repository files and conversation threads, enforces repository rules from `KNOWLEDGE.md`, and posts a structured engineering handoff directly back to GitHub.
 
+For an LLM or coding agent that should install Knowledge automatically in another
+repository, use the [Automated Integration Prompt](Integration.md).
+
 ---
 
 ## Features
@@ -20,7 +23,12 @@
 
 ## 1-Minute GitHub Action Setup
 
-To add Knowledge Bot to any repository, copy these files into your project:
+The easiest path is to give [Integration.md](Integration.md) to a
+repository-aware coding agent. It will inspect the target project, fetch the
+runtime files, create the workflow and `KNOWLEDGE.md`, and report the secrets
+and smoke test still needed from a maintainer.
+
+To add Knowledge Bot manually, copy these files into your project:
 
 ```text
 Your-Repo/
