@@ -36,22 +36,21 @@ def is_llm_configured(provider_name: Optional[str] = None) -> bool:
     return providers.get_provider(provider_name).is_configured()
 
 
-def get_max_file_chars() -> int:
+def _positive_int_env(name: str, default: int) -> int:
     try:
-        return int(os.getenv("KNOWLEDGE_MAX_FILE_CHARS", "3000"))
+        value = int(os.getenv(name, str(default)))
     except ValueError:
-        return 3000
+        return default
+    return value if value > 0 else default
+
+
+def get_max_file_chars() -> int:
+    return _positive_int_env("KNOWLEDGE_MAX_FILE_CHARS", 3000)
 
 
 def get_max_comment_chars() -> int:
-    try:
-        return int(os.getenv("KNOWLEDGE_MAX_COMMENT_CHARS", "2500"))
-    except ValueError:
-        return 2500
+    return _positive_int_env("KNOWLEDGE_MAX_COMMENT_CHARS", 2500)
 
 
 def get_max_diff_chars() -> int:
-    try:
-        return int(os.getenv("KNOWLEDGE_MAX_DIFF_CHARS", "1500"))
-    except ValueError:
-        return 1500
+    return _positive_int_env("KNOWLEDGE_MAX_DIFF_CHARS", 1500)
