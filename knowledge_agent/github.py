@@ -294,6 +294,9 @@ class GitHubClient:
             print(f"GitHub API Error (fetch_latest_commit_sha): {e}")
         return None
 
+    # Backward compatibility alias
+    fetch_commit_sha = fetch_latest_commit_sha
+
     @staticmethod
     def post_issue_comment(token: str, owner: str, repo: str, issue_number: int, comment_body: str) -> bool:
         try:

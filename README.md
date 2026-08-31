@@ -7,6 +7,8 @@
 ## Features
 
 - **GitHub-Native Interaction:** Triggered automatically by commenting `@Knowledge <question>` or `/knowledge <question>` on any Issue or PR.
+- **Adaptive Technicality Calibration:** Internal 1–10 point system dynamically calibrates response technicality from conceptual analogies (1–3) to low-level implementation/AST/schema traces (7–10) without leaking point values.
+- **Cross-Repository Intelligence:** Discovers context and traces relationships across companion services (frontend, backend, shared packages) with repository-scoped citations.
 - **Multi-LLM Provider Architecture:** Native REST adapters for Mistral AI, OpenAI, Anthropic Claude, Google Gemini, Groq, and local Ollama without heavy SDK dependencies.
 - **Intent-Driven Context Retrieval:** Classifies queries across 7 intent categories (PR understanding, repo onboarding, architecture explanation, contribution guidance, feature flows, historical decisions, and issue onboarding) to collect high-signal evidence.
 - **Mandatory Guardrail Enforcement:** Parses repository guidelines from `KNOWLEDGE.md` and injects them into system instructions.
@@ -18,13 +20,17 @@
 
 ## 1-Minute GitHub Action Setup
 
-To add Knowledge Bot to any repository, copy the workflow template from `templates/knowledge.yml` into `.github/workflows/knowledge.yml`:
+The easiest path is to give [Integration.md](Integration.md) to a repository-aware coding agent. It will inspect the target project, fetch the runtime files, create the workflow and `KNOWLEDGE.md`, and report the secrets and smoke test still needed from a maintainer.
+
+To add Knowledge Bot manually, copy these files into your project:
 
 ```text
 Your-Repo/
 ├── .github/workflows/
 │   └── knowledge.yml       # Copied from templates/knowledge.yml
 ├── knowledge_engine.py     # Unified core engine
+├── adaptive_depth.py       # Adaptive technicality depth engine
+├── multi_repo.py           # Multi-repository configuration & target resolver
 ├── providers.py            # Multi-LLM provider adapters
 └── KNOWLEDGE.md            # Repository rulebook & guidelines
 ```
@@ -40,6 +46,49 @@ In your repository settings (**Settings ➔ Secrets and variables ➔ Actions**)
 | `ANTHROPIC_API_KEY` | Anthropic Claude API Key | `claude-3-5-haiku-20241022` |
 | `GEMINI_API_KEY` | Google Gemini API Key | `gemini-1.5-flash` |
 | `GROQ_API_KEY` | Groq Ultra-fast API Key | `llama-3.3-70b-versatile` |
+
+---
+
+## Multi-Repository Intelligence Configuration
+
+Knowledge can investigate relationships across multiple companion repositories (e.g. tracing a frontend React component to a backend FastAPI endpoint or shared microservices).
+
+### 1. Declaring Companion Repositories in `KNOWLEDGE.md`
+
+Add a `## Related Repositories` section to your `KNOWLEDGE.md`:
+
+```markdown
+## Related Repositories
+- `acme/backend-api`: Core FastAPI backend, database services, and REST routes
+- `acme/shared-ui`: Design system components and cross-project UI primitives
+- `acme/auth-service`: OAuth2/OIDC token verification service
+```
+
+### 2. Declaring Companion Repositories via Environment Variable
+
+Alternatively, configure companion repositories globally or in CI via `KNOWLEDGE_RELATED_REPOS`:
+
+```bash
+export KNOWLEDGE_RELATED_REPOS="acme/backend-api, acme/shared-ui, acme/auth-service"
+```
+
+### 3. Cross-Repository Querying
+
+When contributors ask cross-repository questions (e.g. `@Knowledge layout.tsx is connected with which HTTP endpoint in backend repo?`), Knowledge discovers trees and candidate files from all declared companion repositories and formats repository-scoped citations:
+`[owner/repo:path/to/file.py#L1-L20](https://github.com/owner/repo/blob/sha/path/to/file.py#L1-L20)`.
+
+---
+
+## Adaptive Technicality Calibration (Internal Point System)
+
+Knowledge automatically tunes its explanation depth using an internal 1–10 scoring engine (base 5):
+
+- **Conceptual / High Accessibility (Score 1–3):** Activated by simplification cues (*"explain simpler"*, *"ELI5"*, *"for beginners"*). Uses intuitive analogies and high-level architectural walkthroughs.
+- **Balanced Engineering KT (Score 4–6):** Default balanced technical context for professional contributors.
+- **Deep Technical Implementation (Score 7–10):** Activated by low-level technical terms (*"AST"*, *"bytecode"*, *"HTTP endpoint"*, *"SQL schema"*, *"concurrency"*). Traces exact function signatures, routes, and state transitions.
+
+> [!NOTE]
+> Point scores are strictly internal heuristics and are never leaked to users in responses or comments.
 
 ---
 

@@ -14,6 +14,8 @@ All components are modularized in the `knowledge_agent` package:
 - knowledge_agent.__main__: CLI entry point
 """
 
+from adaptive_depth import AdaptiveDepthEngine
+from multi_repo import MultiRepoConfig
 from knowledge_agent import (
     __version__,
     GITHUB_CLIENT_ID,
@@ -44,6 +46,39 @@ from knowledge_agent import (
     process_github_comment,
 )
 from knowledge_agent.__main__ import main
+
+__all__ = [
+    "__version__",
+    "GITHUB_CLIENT_ID",
+    "GITHUB_CLIENT_SECRET",
+    "REDIRECT_URI",
+    "MISTRAL_API_KEY",
+    "MISTRAL_MODEL",
+    "MISTRAL_API_URL",
+    "GITHUB_API_BASE",
+    "GITHUB_AUTH_URL",
+    "GITHUB_TOKEN_URL",
+    "is_github_configured",
+    "is_mistral_configured",
+    "is_llm_configured",
+    "get_max_file_chars",
+    "get_max_comment_chars",
+    "get_max_diff_chars",
+    "GitHubClient",
+    "CitationFormatter",
+    "IntentCategory",
+    "IntentClassifier",
+    "RelationshipExtractor",
+    "ContextRetriever",
+    "ContextExplainer",
+    "ExecutionTracer",
+    "KnowledgeAgent",
+    "is_bot_triggered",
+    "process_github_comment",
+    "AdaptiveDepthEngine",
+    "MultiRepoConfig",
+    "main",
+]
 
 if __name__ == "__main__":
     main()

@@ -39,7 +39,8 @@ class KnowledgeAgent:
         issue_number: Optional[int] = None,
         pr_number: Optional[int] = None,
         provider_name: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        depth_score: Optional[int] = None,
     ) -> Dict[str, Any]:
         # 1. Intent Classification
         intent_info = IntentClassifier.classify(query)
@@ -66,10 +67,24 @@ class KnowledgeAgent:
             }
 
         # 3. Intent-Specific Prompt Synthesis
+        if depth_score is None:
+            try:
+                from adaptive_depth import AdaptiveDepthEngine
+
+                history_texts = []
+                if evidence.get("comments"):
+                    history_texts.extend([c.get("body", "") for c in evidence["comments"] if isinstance(c, dict)])
+                if evidence.get("pr_comments"):
+                    history_texts.extend([c.get("body", "") for c in evidence["pr_comments"] if isinstance(c, dict)])
+                depth_score = AdaptiveDepthEngine().calculate_depth(query, history=history_texts if history_texts else None)
+            except ImportError:
+                pass
+
         system_prompt = ContextExplainer.build_system_prompt(
             intent=intent_info["intent"],
             knowledge_rules=evidence.get("knowledge_rules"),
-            author=author
+            author=author,
+            depth_score=depth_score,
         )
         user_prompt = ContextExplainer.build_user_prompt(evidence, query_author=author)
 
@@ -78,9 +93,10 @@ class KnowledgeAgent:
         llm_answer = KnowledgeAgent.call_llm(system_prompt, user_prompt, provider_name=provider_name, model=model)
 
         files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
+        cross_repo_evidence = evidence.get("cross_repo_evidence")
 
         has_issue_evidence = evidence.get("issue_fetch_ok") is True
-        if llm_answer and (files_read or has_issue_evidence or evidence.get("pr")):
+        if llm_answer and (files_read or has_issue_evidence or evidence.get("pr") or cross_repo_evidence):
             memory.put(
                 owner, repo, intent_info["intent"], intent_info.get("keywords", []),
                 summary=llm_answer, files_read=files_read, commit_sha=evidence.get("commit_sha"),
@@ -88,7 +104,9 @@ class KnowledgeAgent:
 
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
-        citations_text = CitationFormatter.build_citations_section(owner, repo, evidence.get("commit_sha"), files_read)
+        citations_text = CitationFormatter.build_citations_section(
+            owner, repo, evidence.get("commit_sha"), files_read, cross_repo_files=cross_repo_evidence
+        )
 
         discussion_comments = [
             *evidence.get("comments", []),
@@ -99,20 +117,22 @@ class KnowledgeAgent:
             "directives": [c.get("body", "") for c in discussion_comments if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
+            "cross_repo_evidence": cross_repo_evidence,
             "intent": intent_info["intent"],
-            "evidence": evidence
+            "evidence": evidence,
         }
 
         return {
             "query": query,
             "author": author,
             "intent": intent_info["intent"],
+            "depth_score": depth_score,
             "answer": llm_answer,
             "citations": citations_text,
             "commit_sha": evidence.get("commit_sha"),
             "engine": f"{provider.name.capitalize()} AI ({provider.model}) [Knowledge KT Engine]",
             "files_read": files_read,
-            "structured_context": structured_context
+            "structured_context": structured_context,
         }
 
     @staticmethod
