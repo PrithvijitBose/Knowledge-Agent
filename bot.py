@@ -16,7 +16,8 @@ def process_github_comment(
     repo: str,
     issue_number: int,
     comment_body: str,
-    comment_author: str = "Contributor"
+    comment_author: str = "Contributor",
+    target_type: str = None
 ) -> bool:
     return knowledge_engine.process_github_comment(
         access_token=access_token,
@@ -24,7 +25,8 @@ def process_github_comment(
         repo=repo,
         issue_number=issue_number,
         comment_body=comment_body,
-        comment_author=comment_author
+        comment_author=comment_author,
+        target_type=target_type
     )
 
 
@@ -36,6 +38,7 @@ if __name__ == "__main__":
     parser.add_argument("--comment", required=True, help="Comment body containing @Knowledge")
     parser.add_argument("--token", help="GitHub OAuth or Personal Access Token")
     parser.add_argument("--author", default="Contributor", help="Comment author username")
+    parser.add_argument("--target-type", default=None, choices=["issue", "pull_request"], help="Webhook target type")
 
     args = parser.parse_args()
 
@@ -50,5 +53,6 @@ if __name__ == "__main__":
         repo=args.repo,
         issue_number=args.issue,
         comment_body=args.comment,
-        comment_author=args.author
+        comment_author=args.author,
+        target_type=args.target_type
     )

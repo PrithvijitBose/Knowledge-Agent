@@ -172,7 +172,8 @@ def process_github_comment(
     repo: str,
     issue_number: int,
     comment_body: str,
-    comment_author: str = "Contributor"
+    comment_author: str = "Contributor",
+    target_type: Optional[str] = None
 ) -> bool:
     if not is_bot_triggered(comment_body):
         print("No @Knowledge or /knowledge trigger found. Skipping.")
@@ -185,12 +186,14 @@ def process_github_comment(
     result: Dict[str, Any] = {}
     try:
         is_pr_target = False
-        if access_token:
+        if target_type == "pull_request":
+            is_pr_target = True
+        elif target_type == "issue":
+            is_pr_target = False
+        elif access_token:
             pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
             if pr_check and "id" in pr_check:
                 is_pr_target = True
-        if not is_pr_target:
-            is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
 
         pr_num = issue_number if is_pr_target else None
         issue_num = issue_number if not is_pr_target else None
