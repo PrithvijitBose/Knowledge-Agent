@@ -54,3 +54,21 @@ def get_max_comment_chars() -> int:
 
 def get_max_diff_chars() -> int:
     return _positive_int_env("KNOWLEDGE_MAX_DIFF_CHARS", 1500)
+
+
+def get_max_diff_budget() -> int:
+    try:
+        val = os.getenv("KNOWLEDGE_MAX_DIFF_BUDGET")
+        if val is not None:
+            int_val = int(val)
+            if int_val > 0:
+                return int_val
+        val2 = os.getenv("KNOWLEDGE_MAX_DIFF_CHARS")
+        if val2 is not None:
+            int_val2 = int(val2)
+            if int_val2 > 0:
+                return int_val2
+        return 14000
+    except ValueError:
+        return 14000
+

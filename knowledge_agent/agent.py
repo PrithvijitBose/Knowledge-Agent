@@ -44,6 +44,10 @@ class KnowledgeAgent:
     ) -> Dict[str, Any]:
         # 1. Intent Classification
         intent_info = IntentClassifier.classify(query)
+        if pr_number:
+            intent_info["intent"] = IntentCategory.PR_UNDERSTANDING
+            if not intent_info.get("pr_numbers"):
+                intent_info["pr_numbers"] = [pr_number]
 
         # 2. Targeted Context Retrieval
         evidence = ContextRetriever.discover_context(
@@ -212,8 +216,10 @@ def process_github_comment(
             is_pr_target = False
         elif access_token:
             pr_check = GitHubClient.fetch_pull_request(access_token, owner, repo, issue_number)
-            if pr_check and "id" in pr_check:
+            if pr_check and ("id" in pr_check or "number" in pr_check or "head" in pr_check):
                 is_pr_target = True
+        if not is_pr_target and target_type is None:
+            is_pr_target = "pr #" in comment_body.lower() or "pull request" in comment_body.lower()
 
         pr_num = issue_number if is_pr_target else None
         issue_num = issue_number if not is_pr_target else None

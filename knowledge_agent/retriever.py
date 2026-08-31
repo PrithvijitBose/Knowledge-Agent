@@ -1,8 +1,142 @@
 import re
 from typing import Dict, Any, List, Optional
-from knowledge_agent.config import get_max_file_chars, get_max_comment_chars, get_max_diff_chars
+from knowledge_agent.config import get_max_file_chars, get_max_comment_chars, get_max_diff_chars, get_max_diff_budget
 from knowledge_agent.github import GitHubClient
 from knowledge_agent.intent import IntentCategory
+
+
+def compress_hunk_lines(lines: List[str], max_consecutive_unchanged: int = 3) -> List[str]:
+    """Compresses runs of unchanged lines in a diff hunk."""
+    compressed: List[str] = []
+    unchanged_run: List[str] = []
+
+    def flush_unchanged():
+        nonlocal unchanged_run
+        if not unchanged_run:
+            return
+        if len(unchanged_run) <= max_consecutive_unchanged:
+            compressed.extend(unchanged_run)
+        else:
+            compressed.append(unchanged_run[0])
+            compressed.append(unchanged_run[1])
+            omitted = len(unchanged_run) - 3
+            compressed.append(f"  ... [{omitted} unchanged lines omitted] ...")
+            compressed.append(unchanged_run[-1])
+        unchanged_run = []
+
+    for line in lines:
+        if line.startswith(" ") or line == "":
+            unchanged_run.append(line)
+        else:
+            flush_unchanged()
+            compressed.append(line)
+    flush_unchanged()
+    return compressed
+
+
+def truncate_diff_hunk_aware(diff_text: Optional[str], max_budget: int = 14000) -> Optional[str]:
+    """
+    Applies a hunk-aware truncation algorithm to git unified diffs within a character budget.
+    Preserves diff headers (diff --git, --- a/, +++ b/), hunk headers (@@ ... @@ [func]),
+    and file paths, while compressing large unchanged blocks and truncating gracefully if
+    the aggregate budget is reached.
+    """
+    if not diff_text:
+        return diff_text
+
+    if max_budget <= 0:
+        return ""
+
+    if len(diff_text) <= max_budget and "\n@@ " not in diff_text and not diff_text.startswith("@@ "):
+        return diff_text[:max_budget]
+
+    if "diff --git" not in diff_text and "--- " not in diff_text and "@@ " not in diff_text:
+        return diff_text[:max_budget]
+
+    raw_lines = diff_text.splitlines()
+    file_diffs: List[Dict[str, Any]] = []
+    current_file: Optional[Dict[str, Any]] = None
+    current_hunk: Optional[Dict[str, Any]] = None
+
+    for line in raw_lines:
+        if line.startswith("diff --git ") or (line.startswith("--- ") and current_file is None):
+            if current_hunk is not None and current_file is not None:
+                current_file["hunks"].append(current_hunk)
+                current_hunk = None
+            if current_file is not None:
+                file_diffs.append(current_file)
+            current_file = {"header_lines": [line], "hunks": []}
+        elif current_file is None:
+            current_file = {"header_lines": [line], "hunks": []}
+        elif line.startswith("@@ "):
+            if current_hunk is not None and current_file is not None:
+                current_file["hunks"].append(current_hunk)
+            current_hunk = {"hunk_header": line, "lines": []}
+        elif current_hunk is not None:
+            current_hunk["lines"].append(line)
+        else:
+            if current_file is not None:
+                current_file["header_lines"].append(line)
+
+    if current_hunk is not None and current_file is not None:
+        current_file["hunks"].append(current_hunk)
+    if current_file is not None:
+        file_diffs.append(current_file)
+
+    result_lines: List[str] = []
+    current_chars = 0
+    truncated = False
+
+    def append_omitted_msg(msg: str):
+        nonlocal current_chars
+        while result_lines and (current_chars + len(msg) + 1 > max_budget):
+            popped = result_lines.pop()
+            current_chars -= (len(popped) + 1)
+        if current_chars + len(msg) + (1 if result_lines else 0) <= max_budget:
+            result_lines.append(msg)
+            current_chars += len(msg) + 1
+
+    for file_idx, f_diff in enumerate(file_diffs):
+        file_header_block = "\n".join(f_diff["header_lines"])
+        if current_chars + len(file_header_block) + 1 > max_budget:
+            remaining_files = len(file_diffs) - file_idx
+            append_omitted_msg(f"... [diff truncated: {remaining_files} file(s) omitted due to character budget] ...")
+            truncated = True
+            break
+
+        result_lines.append(file_header_block)
+        current_chars += len(file_header_block) + 1
+
+        for hunk_idx, hunk in enumerate(f_diff["hunks"]):
+            hunk_header = hunk["hunk_header"]
+            compressed_lines = compress_hunk_lines(hunk["lines"])
+            hunk_block = hunk_header + ("\n" + "\n".join(compressed_lines) if compressed_lines else "")
+
+            if current_chars + len(hunk_block) + 1 <= max_budget:
+                result_lines.append(hunk_block)
+                current_chars += len(hunk_block) + 1
+            else:
+                if current_chars + len(hunk_header) + 1 < max_budget:
+                    result_lines.append(hunk_header)
+                    current_chars += len(hunk_header) + 1
+                    for l in compressed_lines:
+                        if current_chars + len(l) + 1 <= max_budget - 50:
+                            result_lines.append(l)
+                            current_chars += len(l) + 1
+                        else:
+                            break
+                remaining_hunks = len(f_diff["hunks"]) - hunk_idx
+                append_omitted_msg(f"... [diff truncated: {remaining_hunks} hunk(s) omitted] ...")
+                truncated = True
+                break
+
+        if truncated:
+            break
+
+    final_diff = "\n".join(result_lines)
+    if len(final_diff) > max_budget:
+        final_diff = final_diff[:max_budget]
+    return final_diff
 
 
 class RelationshipExtractor:
@@ -90,7 +224,7 @@ class ContextRetriever:
 
         max_file = get_max_file_chars()
         max_comment = get_max_comment_chars()
-        max_diff = get_max_diff_chars()
+        max_diff = get_max_diff_budget()
 
         knowledge_rules = GitHubClient.fetch_file_content(token, owner, repo, "KNOWLEDGE.md")
         commit_sha = GitHubClient.fetch_latest_commit_sha(token, owner, repo)
@@ -108,8 +242,10 @@ class ContextRetriever:
             "fetched_files": fetched_files
         }
 
-        # Route retrieval based on Intent Category
-        if intent == IntentCategory.PR_UNDERSTANDING:
+        # Route retrieval based on Intent Category or explicitly provided PR number
+        if pr_number or intent == IntentCategory.PR_UNDERSTANDING:
+            intent = IntentCategory.PR_UNDERSTANDING
+            evidence["intent"] = intent
             target_pr = pr_number or (intent_info.get("pr_numbers", [])[0] if intent_info.get("pr_numbers") else None)
             if target_pr:
                 pr = GitHubClient.fetch_pull_request(token, owner, repo, target_pr)
@@ -118,14 +254,17 @@ class ContextRetriever:
                 changed_files = GitHubClient.fetch_pr_files(token, owner, repo, target_pr)
                 diff = GitHubClient.fetch_pr_diff(token, owner, repo, target_pr)
 
+                pr_head_sha = ((pr or {}).get("head") or {}).get("sha")
+                if pr_head_sha:
+                    evidence["commit_sha"] = pr_head_sha
+
                 evidence["pr"] = pr
                 evidence["pr_comments"] = pr_comments or []
                 evidence["review_comments"] = review_comments or []
                 evidence["changed_files"] = changed_files or []
-                evidence["diff"] = diff[:max_diff] if diff else None
+                evidence["diff"] = truncate_diff_hunk_aware(diff, max_budget=max_diff) if diff else None
 
                 # Fetch content of key changed files using PR head sha
-                pr_head_sha = ((pr or {}).get("head") or {}).get("sha")
                 for f in (changed_files or [])[:5]:
                     filename = f.get("filename")
                     if filename and filename not in fetched_files:
