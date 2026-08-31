@@ -2,9 +2,6 @@
 
 **Knowledge** is an engineering context layer bot designed to run natively inside GitHub Issues and Pull Requests. When a contributor or maintainer comments `@Knowledge <question>` or `/knowledge <question>`, the engine classifies query intent, retrieves bounded evidence across repository files and conversation threads, enforces repository rules from `KNOWLEDGE.md`, and posts a structured engineering handoff directly back to GitHub.
 
-For an LLM or coding agent that should install Knowledge automatically in another
-repository, use the [Automated Integration Prompt](Integration.md).
-
 ---
 
 ## Features
@@ -23,17 +20,14 @@ repository, use the [Automated Integration Prompt](Integration.md).
 
 ## 1-Minute GitHub Action Setup
 
-The easiest path is to give [Integration.md](Integration.md) to a
-repository-aware coding agent. It will inspect the target project, fetch the
-runtime files, create the workflow and `KNOWLEDGE.md`, and report the secrets
-and smoke test still needed from a maintainer.
+The easiest path is to give [Integration.md](Integration.md) to a repository-aware coding agent. It will inspect the target project, fetch the runtime files, create the workflow and `KNOWLEDGE.md`, and report the secrets and smoke test still needed from a maintainer.
 
 To add Knowledge Bot manually, copy these files into your project:
 
 ```text
 Your-Repo/
 ├── .github/workflows/
-│   └── knowledge.yml       # GitHub Action workflow
+│   └── knowledge.yml       # Copied from templates/knowledge.yml
 ├── knowledge_engine.py     # Unified core engine
 ├── adaptive_depth.py       # Adaptive technicality depth engine
 ├── multi_repo.py           # Multi-repository configuration & target resolver
@@ -113,6 +107,16 @@ export GEMINI_MODEL=gemini-1.5-pro
 export GROQ_MODEL=llama-3.3-70b-versatile
 ```
 
+### Evidence Truncation Limits (Optional)
+
+Configure context bounding limits via environment variables:
+
+| Variable | Description | Default |
+| :--- | :--- | :--- |
+| `KNOWLEDGE_MAX_FILE_CHARS` | Maximum characters read per evidence file | `3000` |
+| `KNOWLEDGE_MAX_COMMENT_CHARS` | Maximum characters read per comment | `2500` |
+| `KNOWLEDGE_MAX_DIFF_CHARS` | Maximum characters read from dependency files | `1500` |
+
 ### Local / Air-Gapped Execution with Ollama
 
 To run Knowledge without third-party API calls using local Ollama models:
@@ -132,11 +136,18 @@ export OLLAMA_MODEL=llama3.2:latest
 git clone https://github.com/PrithvijitBose/Knowledge-Agent.git
 cd Knowledge-Agent
 
-# Install dependencies
+# Install in development mode
+pip install -e .
+
+# Or install dependencies from requirements.txt
 pip install -r requirements.txt
 
+# Run CLI directly
+knowledge-agent --help
+# Or: python -m knowledge_agent --help
+
 # Run all hermetic unit tests offline
-python -m unittest discover -s . -p "test_*.py"
+python -m pytest
 ```
 
 ---

@@ -16,12 +16,43 @@ class TestCitationsAndPermalinks(unittest.TestCase):
         url = CitationFormatter.format_file_permalink("owner", "repo", None, "README.md")
         self.assertEqual(url, "https://github.com/owner/repo/blob/main/README.md")
 
+    def test_format_file_permalink_url_encoding(self):
+        url = CitationFormatter.format_file_permalink(
+            "owner", "repo", "commit_sha_123", "docs/getting started guide.md"
+        )
+        self.assertEqual(url, "https://github.com/owner/repo/blob/commit_sha_123/docs/getting%20started%20guide.md")
+
+        url_special = CitationFormatter.format_file_permalink(
+            "owner", "repo", "sha456", "path with spaces/file#name?.py"
+        )
+        self.assertEqual(url_special, "https://github.com/owner/repo/blob/sha456/path%20with%20spaces/file%23name%3F.py")
+
+    def test_format_file_permalink_line_anchors(self):
+        # Single line
+        url_single = CitationFormatter.format_file_permalink(
+            "owner", "repo", "sha123", "src/main.py", start_line=42
+        )
+        self.assertEqual(url_single, "https://github.com/owner/repo/blob/sha123/src/main.py#L42")
+
+        # Line range
+        url_range = CitationFormatter.format_file_permalink(
+            "owner", "repo", "sha123", "src/main.py", start_line=10, end_line=25
+        )
+        self.assertEqual(url_range, "https://github.com/owner/repo/blob/sha123/src/main.py#L10-L25")
+
+        # Equal start and end line
+        url_equal = CitationFormatter.format_file_permalink(
+            "owner", "repo", "sha123", "src/main.py", start_line=15, end_line=15
+        )
+        self.assertEqual(url_equal, "https://github.com/owner/repo/blob/sha123/src/main.py#L15")
+
     def test_build_citations_section(self):
-        files = ["b_file.py", "a_file.py"]
+        files = ["b_file.py", "a_file.py", "docs/my doc.md"]
         section = CitationFormatter.build_citations_section("owner", "repo", "commit123", files)
         self.assertIn("### 📚 Referenced Files & Citations", section)
         self.assertIn("- [`a_file.py`](https://github.com/owner/repo/blob/commit123/a_file.py)", section)
         self.assertIn("- [`b_file.py`](https://github.com/owner/repo/blob/commit123/b_file.py)", section)
+        self.assertIn("- [`docs/my doc.md`](https://github.com/owner/repo/blob/commit123/docs/my%20doc.md)", section)
 
     def test_build_citations_section_empty(self):
         section = CitationFormatter.build_citations_section("owner", "repo", "commit123", [])

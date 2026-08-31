@@ -114,7 +114,9 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     if not token or not owner or not repo or not issue_number:
         raise HTTPException(status_code=500, detail="Missing repository context or GITHUB_TOKEN environment variable")
 
-    print(f"📥 Received Webhook from GitHub: @{author} mentioned @Knowledge on {owner}/{repo} Issue #{issue_number}")
+    target_type = "pull_request" if ("pull_request" in payload or (issue and "pull_request" in issue)) else "issue"
+
+    print(f"📥 Received Webhook from GitHub: @{author} mentioned @Knowledge on {owner}/{repo} {target_type.title()} #{issue_number}")
 
     # Process headlessly in background task
     background_tasks.add_task(
@@ -124,12 +126,13 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
         repo=repo,
         issue_number=issue_number,
         comment_body=body,
-        comment_author=author
+        comment_author=author,
+        target_type=target_type
     )
 
     return {
         "status": "processing",
-        "message": f"Triggered Knowledge bot for {owner}/{repo} Issue #{issue_number}"
+        "message": f"Triggered Knowledge bot for {owner}/{repo} {target_type.title()} #{issue_number}"
     }
 
 

@@ -22,3 +22,9 @@ env/
 # IDE files
 .vscode/
 .idea/
+
+# Packaging & Build
+*.egg-info/
+build/
+dist/
+.pytest_cache/
