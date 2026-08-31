@@ -373,7 +373,7 @@ class ContextRetriever:
 
             combined_text = query
             if evidence.get("issue"):
-                combined_text = f"{evidence['issue'].get('title', '')}\n{evidence['issue'].get('body', '')}\n" + "\n".join([c.get('body', '') for c in evidence.get("comments", [])])
+                combined_text = f"{query}\n{evidence['issue'].get('title', '')}\n{evidence['issue'].get('body', '')}\n" + "\n".join([c.get('body', '') or '' for c in evidence.get("comments", [])])
             
             ref_prs = RelationshipExtractor.extract_referenced_prs(combined_text)
             ref_files = RelationshipExtractor.extract_referenced_files(combined_text)

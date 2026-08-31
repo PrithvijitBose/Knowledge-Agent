@@ -113,9 +113,9 @@ Configure context bounding limits via environment variables:
 
 | Variable | Description | Default |
 | :--- | :--- | :--- |
-| `KNOWLEDGE_MAX_FILE_CHARS` | Maximum characters read per evidence file | `3000` |
-| `KNOWLEDGE_MAX_COMMENT_CHARS` | Maximum characters read per comment | `2500` |
-| `KNOWLEDGE_MAX_DIFF_CHARS` | Maximum characters read from dependency files | `1500` |
+| `KNOWLEDGE_MAX_FILE_CHARS` | Maximum characters read per primary evidence file (`KNOWLEDGE.md`, `README.md`, `CONTRIBUTING.md`) and per PR diff | `3000` |
+| `KNOWLEDGE_MAX_COMMENT_CHARS` | Maximum characters read per secondary evidence file (changed files, architecture and keyword matches) | `2500` |
+| `KNOWLEDGE_MAX_DIFF_CHARS` | Maximum characters read from dependency manifests (`requirements.txt`, `package.json`) | `1500` |
 
 ### Local / Air-Gapped Execution with Ollama
 

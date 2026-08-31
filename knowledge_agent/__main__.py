@@ -21,15 +21,23 @@ def main():
         print("Error: GitHub Token required via --token or GITHUB_TOKEN environment variable.")
         sys.exit(1)
 
-    process_github_comment(
+    from knowledge_agent.agent import is_bot_triggered
+
+    if not is_bot_triggered(args.comment):
+        # No trigger token present; this is a no-op, not a failure.
+        return
+
+    succeeded = process_github_comment(
         access_token=token,
         owner=args.owner,
         repo=args.repo,
         issue_number=args.issue,
         comment_body=args.comment,
-        comment_author=args.author,
-        target_type=args.target_type
+        comment_author=args.author
     )
+    if not succeeded:
+        print("Error: Knowledge Agent failed to post a reply.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
