@@ -98,13 +98,9 @@ class KnowledgeAgent:
         has_issue_evidence = evidence.get("issue_fetch_ok") is True
         if llm_answer and (files_read or has_issue_evidence or evidence.get("pr") or cross_repo_evidence):
             memory.put(
-        # 4. LLM Call via Provider Router
-        provider = providers.get_provider(provider_name, model=model)
-        try:
-            llm_answer = provider.generate(system_prompt, user_prompt)
-        except Exception as e:
-            print(f"LLM provider error ({provider.name}): {e}")
-            llm_answer = ""
+                owner, repo, intent_info["intent"], intent_info.get("keywords", []),
+                summary=llm_answer, files_read=files_read, commit_sha=evidence.get("commit_sha"),
+            )
 
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)

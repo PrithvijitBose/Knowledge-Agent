@@ -21,7 +21,6 @@ def main():
         print("Error: GitHub Token required via --token or GITHUB_TOKEN environment variable.")
         sys.exit(1)
 
-    process_github_comment(
     from knowledge_agent.agent import is_bot_triggered
 
     if not is_bot_triggered(args.comment):

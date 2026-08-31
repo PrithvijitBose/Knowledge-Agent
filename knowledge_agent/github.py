@@ -88,7 +88,10 @@ class GitHubClient:
             # created the comment before it dropped -- retrying blind risks
             # posting it twice. Only retry on a definite rejection response
             # (5xx / rate limit), never on a connection-level exception.
-            return client.post(url, headers=headers, json=json_body)
+            return retry.request_with_retry(
+                lambda: client.post(url, headers=headers, json=json_body),
+                retry_on_connection_error=False,
+            )
 
     @staticmethod
     def fetch_user(token: str) -> Optional[Dict[str, Any]]:
