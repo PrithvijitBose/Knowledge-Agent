@@ -12,6 +12,7 @@ def main():
     parser.add_argument("--comment", required=True, help="Comment body containing @Knowledge")
     parser.add_argument("--token", help="GitHub OAuth or Personal Access Token")
     parser.add_argument("--author", default="Contributor", help="Author of the comment")
+    parser.add_argument("--target-type", default=None, choices=["issue", "pull_request"], help="Webhook target type")
 
     args = parser.parse_args()
 
@@ -26,7 +27,8 @@ def main():
         repo=args.repo,
         issue_number=args.issue,
         comment_body=args.comment,
-        comment_author=args.author
+        comment_author=args.author,
+        target_type=args.target_type
     )
 
 

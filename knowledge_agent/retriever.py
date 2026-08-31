@@ -413,6 +413,80 @@ class ContextRetriever:
                 if readme and "README.md" not in fetched_files:
                     fetched_files["README.md"] = readme[:max_comment]
 
+        # Multi-Repository Context Discovery
+        try:
+            from multi_repo import MultiRepoConfig
+
+            if MultiRepoConfig.is_cross_repo_query(query):
+                related_repos = MultiRepoConfig.parse_related_repositories(owner, repo, knowledge_rules)
+                cross_repo_evidence = {}
+                for rel in related_repos[:3]:
+                    rel_owner = rel.get("owner", owner)
+                    rel_repo = rel.get("repo", "")
+                    rel_desc = rel.get("description", "")
+                    if not rel_repo:
+                        continue
+                    repo_key = f"{rel_owner}/{rel_repo}"
+
+                    rel_sha = GitHubClient.fetch_commit_sha(token, rel_owner, rel_repo) or GitHubClient.fetch_latest_commit_sha(token, rel_owner, rel_repo)
+                    rel_tree = GitHubClient.fetch_repo_tree(token, rel_owner, rel_repo) or []
+
+                    # Find relevant candidate files in companion repository
+                    target_keywords = list(set(keywords + [
+                        "route", "routes", "router", "routers", "endpoint", "endpoints",
+                        "api", "main", "app", "server", "handler", "handlers",
+                        "controller", "controllers", "service", "services", "schema", "schemas"
+                    ]))
+                    query_words = re.findall(r"[a-zA-Z0-9_\-\.]+", query.lower())
+                    for w in query_words:
+                        if len(w) >= 3 and w not in ["the", "and", "for", "with", "which", "what", "how", "repo", "backend", "frontend"]:
+                            if w not in target_keywords:
+                                target_keywords.append(w)
+
+                    scored_files = []
+                    for path in rel_tree:
+                        path_lower = path.lower()
+                        if any(p in path_lower for p in [".github/", "node_modules/", "vendor/", "__pycache__/", "venv/", ".git/"]):
+                            continue
+                        score = 0
+                        for kw in target_keywords:
+                            if kw in path_lower:
+                                score += 2 if kw in path_lower.split("/")[-1] else 1
+                        if score > 0:
+                            scored_files.append((score, path))
+
+                    scored_files.sort(key=lambda x: x[0], reverse=True)
+                    candidate_files = [p for _, p in scored_files[:3]]
+
+                    if not candidate_files:
+                        for path in rel_tree:
+                            if not any(p in path.lower() for p in [".github/", "node_modules/", "vendor/", "__pycache__/", "venv/"]):
+                                candidate_files.append(path)
+                                if len(candidate_files) >= 3:
+                                    break
+
+                    rel_fetched_files = {}
+                    rel_files_read = []
+                    for path in candidate_files:
+                        content = GitHubClient.fetch_file_content(token, rel_owner, rel_repo, path, ref=rel_sha)
+                        if content:
+                            rel_fetched_files[path] = content[:max_comment]
+                            rel_files_read.append(path)
+
+                    cross_repo_evidence[repo_key] = {
+                        "owner": rel_owner,
+                        "repo": rel_repo,
+                        "sha": rel_sha,
+                        "description": rel_desc,
+                        "files_read": rel_files_read,
+                        "fetched_files": rel_fetched_files,
+                    }
+
+                if cross_repo_evidence:
+                    evidence["cross_repo_evidence"] = cross_repo_evidence
+        except ImportError:
+            pass
+
         return evidence
 
     # Aliases

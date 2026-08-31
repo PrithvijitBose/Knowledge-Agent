@@ -6,7 +6,12 @@ class ContextExplainer:
     """Formats system & user prompts aligned with KNOWLEDGE.md investigation philosophy."""
 
     @staticmethod
-    def build_system_prompt(intent: str, knowledge_rules: Optional[str], author: str = "Contributor") -> str:
+    def build_system_prompt(
+        intent: str,
+        knowledge_rules: Optional[str],
+        author: str = "Contributor",
+        depth_score: Optional[int] = None,
+    ) -> str:
         base = (
             "You are @Knowledge, an engineering context assistant for this repository.\n"
             "Act like an experienced senior engineer sitting beside @{author}, helping them understand a real codebase.\n\n"
@@ -97,6 +102,15 @@ class ContextExplainer:
                 "- Answer @{author}'s question directly using the most relevant repository evidence available.\n"
                 "- Investigate before answering — don't just match filenames."
             )
+
+        if depth_score is not None:
+            try:
+                from adaptive_depth import AdaptiveDepthEngine
+
+                depth_guidance = AdaptiveDepthEngine().get_prompt_guidance(depth_score)
+                base += f"\n\n=== INTERNAL DEPTH GUIDANCE ===\n{depth_guidance}\n===============================\n"
+            except ImportError:
+                pass
 
         return base.replace("{author}", author)
 
@@ -230,6 +244,18 @@ class ContextExplainer:
                     break
                 prompt += block
                 used += len(block)
+
+        cross_repo = evidence.get("cross_repo_evidence")
+        if cross_repo:
+            prompt += "\n--- CROSS-REPOSITORY EVIDENCE ---\n"
+            for rel_name, rel_data in cross_repo.items():
+                rel_desc = rel_data.get("description", "")
+                desc_str = f" ({rel_desc})" if rel_desc else ""
+                prompt += f"Companion Repository: {rel_name}{desc_str}\n"
+                rel_fetched = rel_data.get("fetched_files", {})
+                for rf_name, rf_content in rel_fetched.items():
+                    prompt += f"\nFile [{rel_name}:{rf_name}]:\n```\n{rf_content}\n```\n"
+                prompt += "\n"
 
         prompt += (
             f"\nAnswer @{query_author}'s question naturally. "
