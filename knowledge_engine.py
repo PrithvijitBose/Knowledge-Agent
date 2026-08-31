@@ -1012,6 +1012,25 @@ def process_github_comment(
 
 
 
+def format_citations_table(citations: list[dict]) -> str:
+    """Format multiple file citations into a readable markdown table."""
+    if not citations:
+        return ""
+    lines = [
+        "| File | Lines | Link |",
+        "| :--- | :--- | :--- |"
+    ]
+    for c in citations:
+        file_path = c.get("file", "")
+        start = c.get("start_line", "")
+        end = c.get("end_line", "")
+        line_range = f"L{start}-L{end}" if start and end else f"L{start}" if start else "—"
+        url = c.get("url", "")
+        link = f"[View source]({url})" if url else "—"
+        lines.append(f"| `{file_path}` | {line_range} | {link} |")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Knowledge Engine CLI Runner")
     parser.add_argument("--owner", required=True, help="GitHub repository owner")
