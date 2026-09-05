@@ -28,10 +28,8 @@ To add Knowledge Bot manually, copy these files into your project:
 Your-Repo/
 ├── .github/workflows/
 │   └── knowledge.yml       # Copied from templates/knowledge.yml
-├── knowledge_engine.py     # Unified core engine
-├── adaptive_depth.py       # Adaptive technicality depth engine
-├── multi_repo.py           # Multi-repository configuration & target resolver
-├── providers.py            # Multi-LLM provider adapters
+├── knowledge_agent/        # Core package directory (copied whole)
+├── knowledge_engine.py     # Unified core engine facade
 └── KNOWLEDGE.md            # Repository rulebook & guidelines
 ```
 

@@ -1,7 +1,7 @@
 import re
 from typing import Dict, Any, Optional
-import providers
-import memory_store
+from . import providers
+from . import memory_store
 from knowledge_agent.github import GitHubClient
 from knowledge_agent.intent import IntentCategory, IntentClassifier
 from knowledge_agent.retriever import ContextRetriever
@@ -73,7 +73,7 @@ class KnowledgeAgent:
         # 3. Intent-Specific Prompt Synthesis
         if depth_score is None:
             try:
-                from adaptive_depth import AdaptiveDepthEngine
+                from .adaptive_depth import AdaptiveDepthEngine
 
                 history_texts = []
                 if evidence.get("comments"):

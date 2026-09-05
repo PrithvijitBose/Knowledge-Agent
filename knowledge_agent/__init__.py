@@ -2,7 +2,7 @@
 Knowledge Agent — The Engineering Context Layer for Repositories.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 from knowledge_agent.config import (
     GITHUB_CLIENT_ID,

@@ -2,7 +2,7 @@ import base64
 from typing import Dict, Any, List, Optional
 import httpx
 from knowledge_agent.config import GITHUB_API_BASE
-import retry
+from . import retry
 
 
 class GitHubClient:
