@@ -105,7 +105,7 @@ class ContextExplainer:
 
         if depth_score is not None:
             try:
-                from adaptive_depth import AdaptiveDepthEngine
+                from .adaptive_depth import AdaptiveDepthEngine
 
                 depth_guidance = AdaptiveDepthEngine().get_prompt_guidance(depth_score)
                 base += f"\n\n=== INTERNAL DEPTH GUIDANCE ===\n{depth_guidance}\n===============================\n"

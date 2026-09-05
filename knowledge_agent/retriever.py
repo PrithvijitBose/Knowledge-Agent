@@ -415,7 +415,7 @@ class ContextRetriever:
 
         # Multi-Repository Context Discovery
         try:
-            from multi_repo import MultiRepoConfig
+            from .multi_repo import MultiRepoConfig
 
             if MultiRepoConfig.is_cross_repo_query(query):
                 related_repos = MultiRepoConfig.parse_related_repositories(owner, repo, knowledge_rules)

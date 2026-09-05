@@ -14,8 +14,8 @@ All components are modularized in the `knowledge_agent` package:
 - knowledge_agent.__main__: CLI entry point
 """
 
-from adaptive_depth import AdaptiveDepthEngine
-from multi_repo import MultiRepoConfig
+from knowledge_agent.adaptive_depth import AdaptiveDepthEngine
+from knowledge_agent.multi_repo import MultiRepoConfig
 from knowledge_agent import (
     __version__,
     GITHUB_CLIENT_ID,
@@ -66,6 +66,7 @@ __all__ = [
     "get_max_file_chars",
     "get_max_comment_chars",
     "get_max_diff_chars",
+    "get_max_diff_budget",
     "GitHubClient",
     "CitationFormatter",
     "IntentCategory",

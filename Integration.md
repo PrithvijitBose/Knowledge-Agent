@@ -79,45 +79,29 @@ host permits it, use that revision for every runtime file, and record the SHA in
 the completion report. This makes a later installation reproducible even if the
 upstream branch moves.
 
-Place these sibling files at the target repository root because
-`knowledge_engine.py` imports the other modules directly:
+Place `knowledge_engine.py` and the `knowledge_agent/` package directory at the target repository root:
 
-| File | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `knowledge_engine.py` | GitHub event handling, evidence retrieval, and response orchestration |
-| `providers.py` | Mistral/Gemini and other provider adapters |
-| `memory_store.py` | Persistent context memory used by the cache |
-| `retry.py` | Bounded retry/backoff for network requests |
-| `adaptive_depth.py` | Adaptive evidence-retrieval depth and investigation limits |
-| `multi_repo.py` | Cross-repository context and repository-discovery helpers |
+| `knowledge_engine.py` | Unified core engine facade and CLI entry point |
+| `knowledge_agent/` | Core package directory containing providers, retriever, memory store, retry, and prompt synthesis |
 
-After resolving the upstream revision, inspect the imports in
-`knowledge_engine.py` and its sibling modules. If the revision adds another
-local module, include that module in the same download, file-conflict checks,
-and validation steps before declaring the installation complete. The six files
-listed above are required by the current upstream implementation.
-
-Before copying each file, check whether the target already has one. Preserve a
-compatible local version when possible; otherwise stop and show the diff that
-needs maintainer approval. Do not copy the upstream repository's dashboard,
-tests, `.env`, or development-only files into the application unless the
-developer explicitly asks for them.
-
-If a command-line download is useful, adapt it to the host operating system.
-These examples are illustrative and must use the inspected upstream revision:
+Because `knowledge_agent/` is a package directory rather than a single file, fetching individual files with `curl` is error-prone. Instead, fetch the archive tarball for the inspected upstream commit and extract `knowledge_engine.py` and `knowledge_agent/`:
 
 ```bash
-mkdir -p .github/workflows
-curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/knowledge_engine.py -o knowledge_engine.py
-curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/providers.py -o providers.py
-curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/memory_store.py -o memory_store.py
-curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/retry.py -o retry.py
-curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/adaptive_depth.py -o adaptive_depth.py
-curl -fsSL https://raw.githubusercontent.com/PrithvijitBose/Knowledge-Agent/main/multi_repo.py -o multi_repo.py
+COMMIT_SHA="<inspected-commit-sha>"
+curl -fsSL "https://github.com/PrithvijitBose/Knowledge-Agent/archive/${COMMIT_SHA}.tar.gz" -o ka.tar.gz
+tar -xzf ka.tar.gz --strip-components=1 "Knowledge-Agent-${COMMIT_SHA}/knowledge_agent" "Knowledge-Agent-${COMMIT_SHA}/knowledge_engine.py"
+rm -f ka.tar.gz
 ```
 
-Do not run these commands with `-k`, suppress certificate validation, or write
-over existing files without the comparison/approval step above.
+Alternatively, you can install the package directly via `pip`:
+
+```bash
+pip install "git+https://github.com/PrithvijitBose/Knowledge-Agent.git@<inspected-commit-sha>"
+```
+
+After resolving the upstream revision, verify that `knowledge_engine.py` and the `knowledge_agent/` package are present. Before copying each file, check whether the target already has one. Preserve a compatible local version when possible; otherwise stop and show the diff that needs maintainer approval. Do not copy the upstream repository's dashboard, tests, `.env`, or development-only files into the application unless the developer explicitly asks for them.
 
 ### Step 3 — create `.github/workflows/knowledge.yml`
 
