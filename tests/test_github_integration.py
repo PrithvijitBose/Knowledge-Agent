@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import knowledge_engine
 from knowledge_engine import GitHubClient, RelationshipExtractor, ContextRetriever, KnowledgeAgent, IntentCategory

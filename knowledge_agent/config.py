@@ -72,3 +72,24 @@ def get_max_diff_budget() -> int:
     except ValueError:
         return 14000
 
+
+def load_local_config(directory: str = ".") -> dict:
+    """Load local configuration from .knowledge-agent.json or .knowledge-agent.yaml."""
+    import json
+    for filename in [".knowledge-agent.json", ".knowledge-agent.yaml", ".knowledge-agent.yml"]:
+        target = os.path.join(directory, filename)
+        if os.path.exists(target):
+            try:
+                with open(target, "r", encoding="utf-8") as f:
+                    content = f.read()
+                if filename.endswith(".json"):
+                    return json.loads(content)
+                res = {}
+                for line in content.splitlines():
+                    if ":" in line and not line.strip().startswith("#"):
+                        k, v = line.split(":", 1)
+                        res[k.strip()] = v.strip().strip('"').strip("'")
+                return res
+            except Exception:
+                return {}
+    return {}

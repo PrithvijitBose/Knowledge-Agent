@@ -161,19 +161,21 @@ class ContextExplainer:
                 )
             if evidence.get("review_comments"):
                 review_lines = [f"- {c.get('path')}:{c.get('line') or c.get('original_line')} @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["review_comments"][-5:]]
+                formatted_reviews = "\n".join(review_lines)
                 prompt += (
-                    f"\nCode Review Comments:\n"
-                    f"=== UNTRUSTED EVIDENCE: REVIEW COMMENTS ===\n"
-                    + "\n".join(review_lines) + "\n"
-                    f"=== END UNTRUSTED EVIDENCE ===\n"
+                    "\nCode Review Comments:\n"
+                    "=== UNTRUSTED EVIDENCE: REVIEW COMMENTS ===\n"
+                    f"{formatted_reviews}\n"
+                    "=== END UNTRUSTED EVIDENCE ===\n"
                 )
             if evidence.get("pr_comments"):
                 pr_comm_lines = [f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["pr_comments"][-5:]]
+                formatted_pr_comm = "\n".join(pr_comm_lines)
                 prompt += (
-                    f"\nDiscussion:\n"
-                    f"=== UNTRUSTED EVIDENCE: PR DISCUSSION ===\n"
-                    + "\n".join(pr_comm_lines) + "\n"
-                    f"=== END UNTRUSTED EVIDENCE ===\n"
+                    "\nDiscussion:\n"
+                    "=== UNTRUSTED EVIDENCE: PR DISCUSSION ===\n"
+                    f"{formatted_pr_comm}\n"
+                    "=== END UNTRUSTED EVIDENCE ===\n"
                 )
             if evidence.get("linked_issue"):
                 li = evidence["linked_issue"]
@@ -206,11 +208,12 @@ class ContextExplainer:
             )
             if evidence.get("comments"):
                 comm_lines = [f"- @{c.get('user',{}).get('login')}: {c.get('body')}" for c in evidence["comments"][-5:]]
+                formatted_comm = "\n".join(comm_lines)
                 prompt += (
-                    f"\nComments:\n"
-                    f"=== UNTRUSTED EVIDENCE: ISSUE COMMENTS ===\n"
-                    + "\n".join(comm_lines) + "\n"
-                    f"=== END UNTRUSTED EVIDENCE ===\n"
+                    "\nComments:\n"
+                    "=== UNTRUSTED EVIDENCE: ISSUE COMMENTS ===\n"
+                    f"{formatted_comm}\n"
+                    "=== END UNTRUSTED EVIDENCE ===\n"
                 )
             if evidence.get("linked_pr"):
                 lpr = evidence["linked_pr"]

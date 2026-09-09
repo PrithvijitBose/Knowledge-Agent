@@ -21,14 +21,23 @@ from knowledge_agent.config import (
     get_max_comment_chars,
     get_max_diff_chars,
     get_max_diff_budget,
+    load_local_config,
 )
 from knowledge_agent.github import GitHubClient
-from knowledge_agent.citations import CitationFormatter
+from knowledge_agent.citations import CitationFormatter, format_citations_table
 from knowledge_agent.intent import IntentCategory, IntentClassifier
 from knowledge_agent.retriever import RelationshipExtractor, ContextRetriever, truncate_diff_hunk_aware
 from knowledge_agent.prompt import ContextExplainer
 from knowledge_agent.tracer import ExecutionTracer
-from knowledge_agent.agent import KnowledgeAgent, is_bot_triggered, process_github_comment
+from knowledge_agent.context_engine import ContextEngine
+from knowledge_agent.agent import (
+    KnowledgeAgent,
+    is_bot_triggered,
+    process_github_comment,
+    generate_knowledge_answer,
+    detect_knowledge_query,
+    call_mistral_api,
+)
 
 __all__ = [
     "__version__",
@@ -48,8 +57,10 @@ __all__ = [
     "get_max_comment_chars",
     "get_max_diff_chars",
     "get_max_diff_budget",
+    "load_local_config",
     "GitHubClient",
     "CitationFormatter",
+    "format_citations_table",
     "IntentCategory",
     "IntentClassifier",
     "RelationshipExtractor",
@@ -57,7 +68,11 @@ __all__ = [
     "truncate_diff_hunk_aware",
     "ContextExplainer",
     "ExecutionTracer",
+    "ContextEngine",
     "KnowledgeAgent",
     "is_bot_triggered",
     "process_github_comment",
+    "generate_knowledge_answer",
+    "detect_knowledge_query",
+    "call_mistral_api",
 ]

@@ -1,8 +1,9 @@
 """
 config.py — Backward-compatibility Shim
-Re-exports configuration variables from `knowledge_engine.py` and `providers.py`.
+Re-exports configuration variables from `knowledge_engine.py`, `knowledge_agent.config`, and `providers.py`.
 """
 
+import knowledge_agent.config
 import knowledge_engine
 import providers
 
@@ -35,22 +36,4 @@ def list_providers():
 
 def load_local_config(directory: str = ".") -> dict:
     """Load local configuration from .knowledge-agent.json or .knowledge-agent.yaml."""
-    import os
-    import json
-    for filename in [".knowledge-agent.json", ".knowledge-agent.yaml", ".knowledge-agent.yml"]:
-        target = os.path.join(directory, filename)
-        if os.path.exists(target):
-            try:
-                with open(target, "r", encoding="utf-8") as f:
-                    content = f.read()
-                if filename.endswith(".json"):
-                    return json.loads(content)
-                res = {}
-                for line in content.splitlines():
-                    if ":" in line and not line.strip().startswith("#"):
-                        k, v = line.split(":", 1)
-                        res[k.strip()] = v.strip().strip('"').strip("'")
-                return res
-            except Exception:
-                return {}
-    return {}
+    return knowledge_agent.config.load_local_config(directory)

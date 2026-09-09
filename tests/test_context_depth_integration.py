@@ -1,8 +1,7 @@
 # tests/test_context_depth_integration.py
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from knowledge_engine import ContextExplainer, KnowledgeAgent, IntentCategory
-import adaptive_depth
 
 
 class TestContextDepthIntegration(unittest.TestCase):

@@ -10,7 +10,8 @@ All components are modularized in the `knowledge_agent` package:
 - knowledge_agent.retriever: RelationshipExtractor and ContextRetriever
 - knowledge_agent.prompt: ContextExplainer
 - knowledge_agent.tracer: ExecutionTracer
-- knowledge_agent.agent: KnowledgeAgent, is_bot_triggered, process_github_comment
+- knowledge_agent.context_engine: ContextEngine
+- knowledge_agent.agent: KnowledgeAgent, is_bot_triggered, process_github_comment, generate_knowledge_answer
 - knowledge_agent.__main__: CLI entry point
 """
 
@@ -34,8 +35,10 @@ from knowledge_agent import (
     get_max_comment_chars,
     get_max_diff_chars,
     get_max_diff_budget,
+    load_local_config,
     GitHubClient,
     CitationFormatter,
+    format_citations_table,
     IntentCategory,
     IntentClassifier,
     RelationshipExtractor,
@@ -43,9 +46,13 @@ from knowledge_agent import (
     truncate_diff_hunk_aware,
     ContextExplainer,
     ExecutionTracer,
+    ContextEngine,
     KnowledgeAgent,
     is_bot_triggered,
     process_github_comment,
+    generate_knowledge_answer,
+    detect_knowledge_query,
+    call_mistral_api,
 )
 from knowledge_agent.__main__ import main
 
@@ -67,39 +74,28 @@ __all__ = [
     "get_max_comment_chars",
     "get_max_diff_chars",
     "get_max_diff_budget",
+    "load_local_config",
     "GitHubClient",
     "CitationFormatter",
+    "format_citations_table",
     "IntentCategory",
     "IntentClassifier",
     "RelationshipExtractor",
     "ContextRetriever",
+    "truncate_diff_hunk_aware",
     "ContextExplainer",
     "ExecutionTracer",
+    "ContextEngine",
     "KnowledgeAgent",
     "is_bot_triggered",
     "process_github_comment",
+    "generate_knowledge_answer",
+    "detect_knowledge_query",
+    "call_mistral_api",
     "AdaptiveDepthEngine",
     "MultiRepoConfig",
     "main",
 ]
-
-def format_citations_table(citations: list[dict]) -> str:
-    """Format multiple file citations into a readable markdown table."""
-    if not citations:
-        return ""
-    lines = [
-        "| File | Lines | Link |",
-        "| :--- | :--- | :--- |"
-    ]
-    for c in citations:
-        file_path = c.get("file", "")
-        start = c.get("start_line", "")
-        end = c.get("end_line", "")
-        line_range = f"L{start}-L{end}" if start and end else f"L{start}" if start else "—"
-        url = c.get("url", "")
-        link = f"[View source]({url})" if url else "—"
-        lines.append(f"| `{file_path}` | {line_range} | {link} |")
-    return "\n".join(lines)
 
 
 if __name__ == "__main__":

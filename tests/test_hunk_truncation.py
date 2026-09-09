@@ -1,8 +1,7 @@
 import os
 import unittest
 from unittest.mock import patch
-from knowledge_agent.retriever import truncate_diff_hunk_aware, compress_hunk_lines, ContextRetriever
-from knowledge_agent.intent import IntentCategory
+from knowledge_agent.retriever import truncate_diff_hunk_aware, compress_hunk_lines
 from knowledge_agent.config import get_max_diff_budget
 
 

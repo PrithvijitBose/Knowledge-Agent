@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 
@@ -119,7 +119,6 @@ class TestRequestWithRetry(unittest.TestCase):
     def test_retry_after_http_date_is_parsed(self):
         import email.utils
         import time
-        from unittest.mock import patch as _patch
 
         future = email.utils.format_datetime(
             email.utils.parsedate_to_datetime(email.utils.formatdate(time.time() + 30, usegmt=True))

@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from knowledge_engine import ContextRetriever, ContextExplainer, CitationFormatter, KnowledgeAgent, IntentCategory
 from multi_repo import MultiRepoConfig
 

@@ -3,7 +3,7 @@ import hmac
 import hashlib
 import json
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import webhook_server
 

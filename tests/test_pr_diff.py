@@ -2,7 +2,6 @@ import unittest
 from unittest.mock import patch, MagicMock
 import httpx
 
-import knowledge_engine
 from knowledge_engine import GitHubClient, ContextRetriever, ContextExplainer, IntentCategory, KnowledgeAgent, process_github_comment
 
 
