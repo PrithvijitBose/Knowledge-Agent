@@ -7,6 +7,7 @@ Delegates execution to `knowledge_engine.py` for GitHub Actions and headless exe
 import sys
 import os
 import argparse
+from typing import Optional
 import knowledge_engine
 
 
@@ -17,7 +18,7 @@ def process_github_comment(
     issue_number: int,
     comment_body: str,
     comment_author: str = "Contributor",
-    target_type: str = None
+    target_type: Optional[str] = None
 ) -> bool:
     return knowledge_engine.process_github_comment(
         access_token=access_token,
@@ -47,7 +48,7 @@ if __name__ == "__main__":
         print("Error: GitHub Token required via --token or GITHUB_TOKEN environment variable.")
         sys.exit(1)
 
-    process_github_comment(
+    succeeded = process_github_comment(
         access_token=token,
         owner=args.owner,
         repo=args.repo,
@@ -56,3 +57,6 @@ if __name__ == "__main__":
         comment_author=args.author,
         target_type=args.target_type
     )
+    if not succeeded:
+        print("Error: Knowledge Bot failed to post a reply.")
+        sys.exit(1)

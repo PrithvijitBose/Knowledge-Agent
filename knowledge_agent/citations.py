@@ -2,8 +2,29 @@ import urllib.parse
 from typing import Any, Dict, List, Optional
 
 
+def format_citations_table(citations: List[Dict[str, Any]]) -> str:
+    """Format multiple file citations into a readable markdown table."""
+    if not citations:
+        return ""
+    lines = [
+        "| File | Lines | Link |",
+        "| :--- | :--- | :--- |"
+    ]
+    for c in citations:
+        file_path = c.get("file", "")
+        start = c.get("start_line", "")
+        end = c.get("end_line", "")
+        line_range = f"L{start}-L{end}" if start and end else f"L{start}" if start else "—"
+        url = c.get("url", "")
+        link = f"[View source]({url})" if url else "—"
+        lines.append(f"| `{file_path}` | {line_range} | {link} |")
+    return "\n".join(lines)
+
+
 class CitationFormatter:
     """Generates clickable GitHub permalinks with commit SHAs for evidence files."""
+
+    format_citations_table = staticmethod(format_citations_table)
 
     @staticmethod
     def format_file_permalink(
@@ -75,4 +96,3 @@ class CitationFormatter:
         if not sections:
             return ""
         return "".join(sections)
-

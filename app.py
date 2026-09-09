@@ -476,8 +476,11 @@ def main():
                             st.caption("No linked PRs detected.")
                         else:
                             for pr in linked_prs:
-                                badge = "🟢 Merged" if pr.get("merged") else "🔴 Closed"
-                                st.markdown(f"- `{badge}` **PR #{pr['number']}**: {pr['title']}")
+                                if isinstance(pr, dict):
+                                    badge = "🟢 Merged" if pr.get("merged") else "🔴 Closed"
+                                    st.markdown(f"- `{badge}` **PR #{pr.get('number', '?')}**: {pr.get('title', '')}")
+                                else:
+                                    st.markdown(f"- **PR #{pr}**")
                                 
                     with col_dir:
                         st.markdown("**🛡️ Maintainer Directives:**")
@@ -486,7 +489,10 @@ def main():
                             st.caption("No explicit directives found.")
                         else:
                             for d in directives:
-                                st.markdown(f"- **@{d['author']}**: *\"{d['body']}\"*")
+                                if isinstance(d, dict):
+                                    st.markdown(f"- **@{d.get('author', 'Maintainer')}**: *\"{d.get('body', '')}\"*")
+                                else:
+                                    st.markdown(f"- *\"{d}\"*")
                                 
                     with col_files:
                         st.markdown("**📄 Referenced Files:**")
@@ -502,8 +508,11 @@ def main():
                         <h4 style="color: #818cf8; margin-bottom: 10px;">🤖 @Knowledge Engineering Handoff</h4>
                     """, unsafe_allow_html=True)
                     
-                    st.caption(f"🧠 **Engine:** `{result['engine']}` | 📁 **Files Read:** `{', '.join(result['files_read']) or 'None'}`")
-                    st.markdown(result["answer"])
+                    engine_str = result.get("engine", "Unknown")
+                    files_read = result.get("files_read", [])
+                    files_str = ", ".join(str(f) for f in files_read) if files_read else "None"
+                    st.caption(f"🧠 **Engine:** `{engine_str}` | 📁 **Files Read:** `{files_str}`")
+                    st.markdown(result.get("answer", ""))
                     
                     st.markdown("</div>", unsafe_allow_html=True)
                     

@@ -1,5 +1,4 @@
-import re
-from typing import Dict, Any, List
+from typing import Dict, Any
 
 
 class IntentCategory:

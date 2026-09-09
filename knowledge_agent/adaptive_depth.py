@@ -7,7 +7,7 @@ Calibrates depth (1-10) without leaking point values into user-facing output.
 
 from __future__ import annotations
 import re
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 
 
 class DepthLevel:

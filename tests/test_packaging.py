@@ -11,6 +11,8 @@ import unittest
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 class TestPackagingAndShims(unittest.TestCase):
@@ -64,6 +66,14 @@ class TestPackagingAndShims(unittest.TestCase):
         self.assertIs(
             multi_repo.MultiRepoConfig,
             knowledge_agent.multi_repo.MultiRepoConfig,
+        )
+
+        import context_engine
+        import knowledge_agent.context_engine
+
+        self.assertIs(
+            context_engine.ContextEngine,
+            knowledge_agent.context_engine.ContextEngine,
         )
 
     def test_version_matches_pyproject(self):
@@ -168,9 +178,12 @@ class TestPackagingAndShims(unittest.TestCase):
             "truncate_diff_hunk_aware",
             "ContextExplainer",
             "ExecutionTracer",
+            "ContextEngine",
             "KnowledgeAgent",
             "is_bot_triggered",
             "process_github_comment",
+            "generate_knowledge_answer",
+            "detect_knowledge_query",
         ]:
             self.assertTrue(hasattr(knowledge_agent, attr), f"knowledge_agent missing {attr}")
             self.assertTrue(hasattr(knowledge_engine, attr), f"knowledge_engine missing {attr}")

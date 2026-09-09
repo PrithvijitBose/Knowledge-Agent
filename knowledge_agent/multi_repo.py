@@ -7,7 +7,7 @@ Enables cross-repository knowledge discovery across frontend, backend, and compa
 from __future__ import annotations
 import os
 import re
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional
 
 
 class MultiRepoConfig:

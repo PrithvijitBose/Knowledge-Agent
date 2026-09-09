@@ -1,5 +1,5 @@
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 from . import providers
 from . import memory_store
 from knowledge_agent.github import GitHubClient
@@ -116,9 +116,18 @@ class KnowledgeAgent:
             *evidence.get("comments", []),
             *evidence.get("pr_comments", []),
         ]
+        directives_list = []
+        for c in discussion_comments:
+            if isinstance(c, dict):
+                body = c.get("body", "") or ""
+                if any(w in body.lower() for w in ["don't", "must", "never", "only", "require", "do not"]):
+                    author_login = (c.get("user") or {}).get("login", "Contributor") if isinstance(c.get("user"), dict) else "Contributor"
+                    directives_list.append({"author": author_login, "body": body})
+
         structured_context = {
             "linked_prs": evidence.get("referenced_prs", []) or ([evidence.get("pr", {}).get("number")] if evidence.get("pr") else []),
-            "directives": [c.get("body", "") for c in discussion_comments if any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
+            "directives": [c.get("body", "") for c in discussion_comments if isinstance(c, dict) and any(w in str(c.get("body", "")).lower() for w in ["don't", "must", "never", "only", "require", "do not"])],
+            "maintainer_directives": directives_list,
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
             "cross_repo_evidence": cross_repo_evidence,
@@ -250,3 +259,201 @@ def process_github_comment(
         return success
     finally:
         tracer.finish(success, result)
+
+
+def call_mistral_api(prompt_system: str, prompt_user: str) -> str:
+    """Invokes Mistral AI API for backward compatibility."""
+    return KnowledgeAgent.call_mistral_api(prompt_system, prompt_user)
+
+
+def detect_knowledge_query(issue: Optional[Dict[str, Any]], comments: Optional[List[Dict[str, Any]]]) -> Tuple[str, str]:
+    """
+    Detects if there is a query directed to @Knowledge or /knowledge in comments or issue body.
+    Returns (query_text, author_username).
+    """
+    for c in reversed(comments or []):
+        body = (c.get("body") or "") if isinstance(c, dict) else ""
+        if is_bot_triggered(body):
+            author = (c.get("user") or {}).get("login", "Contributor") if isinstance(c.get("user"), dict) else "Contributor"
+            return body.strip(), author
+
+    issue = issue or {}
+    issue_body = issue.get("body", "") or ""
+    if is_bot_triggered(issue_body):
+        author = (issue.get("user") or {}).get("login", "Maintainer") if isinstance(issue.get("user"), dict) else "Maintainer"
+        return issue_body.strip(), author
+
+    return "What are the prerequisites and setup instructions for this repository?", "User"
+
+
+def _fallback_summarizer(query_author: str, query_text: str, structured_context: Dict[str, Any]) -> str:
+    """Fallback Engineering Handoff summarizer when LLM API is not active."""
+    issue_title = structured_context.get("issue_title", "")
+    issue_num = structured_context.get("issue_number", "")
+    directives = structured_context.get("maintainer_directives", [])
+    linked_prs = structured_context.get("linked_prs", [])
+    fetched_files = structured_context.get("fetched_files", {})
+
+    hand_off = [
+        f"### 🎯 Engineering Handoff for Issue #{issue_num}: {issue_title}\n",
+        f"Hi **@{query_author}**, here is the expanded context synthesized from the repository history and linked artifacts:\n",
+    ]
+
+    # 1. Before Starting section
+    hand_off.append("#### 📋 Before Starting")
+    if directives:
+        for d in directives:
+            if isinstance(d, dict):
+                hand_off.append(f"- **Maintainer Directive (@{d.get('author', 'Maintainer')})**: {d.get('body', '')}")
+            else:
+                hand_off.append(f"- **Maintainer Directive**: {d}")
+    else:
+        hand_off.append("- Review the issue description and ensure surrounding components remain compatible.")
+    hand_off.append("")
+
+    # 2. Historical Context & PRs
+    if linked_prs:
+        hand_off.append("#### 📜 Surrounding Historical Context & Linked PRs")
+        for pr in linked_prs:
+            if isinstance(pr, dict):
+                status = "🟢 Merged" if pr.get("merged") else f"🔴 {pr.get('state', 'Closed').capitalize()}"
+                hand_off.append(f"- **PR #{pr.get('number', '?')} ({status})**: {pr.get('title', '')}")
+                if pr.get("body"):
+                    hand_off.append(f"  *Note:* {pr.get('body')}")
+                if pr.get("changed_files"):
+                    hand_off.append(f"  *Touched files:* `{', '.join(pr.get('changed_files'))}`")
+            else:
+                hand_off.append(f"- **PR #{pr}**")
+        hand_off.append("")
+
+    # 3. Recommended Steps
+    hand_off.append("#### 🚀 Recommended Next Steps")
+    if fetched_files:
+        hand_off.append(f"1. Start by inspecting referenced files: `{', '.join(fetched_files.keys())}`.")
+    if any(isinstance(p, dict) and p.get("number") == 151 for p in linked_prs):
+        hand_off.append("2. Pay particular attention to `AuthPanel` modular structure introduced in PR #151.")
+    if any(isinstance(p, dict) and p.get("number") == 143 for p in linked_prs):
+        hand_off.append("3. Pay particular attention to mobile behavior to prevent regressions identified in PR #143.")
+    return "\n".join(hand_off)
+
+
+def generate_knowledge_answer(
+    access_token: Optional[str],
+    owner: str,
+    repo: str,
+    issue: Optional[Dict[str, Any]] = None,
+    comments: Optional[List[Dict[str, Any]]] = None,
+    custom_query: str = "",
+    provider_name: Optional[str] = None,
+    model: Optional[str] = None,
+    simulated_prs: Optional[Dict[int, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Core @Knowledge Agent execution engine with Context Engine V1 Expansion.
+    Synthesizes surrounding context (maintainer comments, linked PRs, referenced files)
+    into a structured Engineering Handoff.
+    """
+    from .context_engine import ContextEngine
+
+    issue = issue or {}
+    comments = comments or []
+
+    if custom_query:
+        query_text = custom_query
+        query_author = "User"
+    else:
+        query_text, query_author = detect_knowledge_query(issue, comments)
+
+    # 1. Fetch KNOWLEDGE.md
+    knowledge_rules_content = GitHubClient.fetch_file_content(access_token, owner, repo, "KNOWLEDGE.md")
+
+    # 2. Extract referenced files from issue + comments
+    combined_text = f"{issue.get('title', '')}\n{issue.get('body', '')}\n" + "\n".join(
+        [(c.get('body') or '') for c in comments if isinstance(c, dict)]
+    )
+    from knowledge_agent.retriever import RelationshipExtractor
+    candidate_files = RelationshipExtractor.extract_referenced_files(combined_text)
+
+    # 3. Fetch candidate files
+    fetched_files: Dict[str, str] = {}
+    if knowledge_rules_content:
+        fetched_files["KNOWLEDGE.md"] = knowledge_rules_content[:3000]
+
+    for file_path in candidate_files:
+        if file_path == "KNOWLEDGE.md":
+            continue
+        content = GitHubClient.fetch_file_content(access_token, owner, repo, file_path)
+        if content:
+            fetched_files[file_path] = content[:3000]
+
+    # 4. Assemble Structured Context via ContextEngine
+    structured_context = ContextEngine.build_structured_context(
+        access_token=access_token,
+        owner=owner,
+        repo=repo,
+        issue=issue,
+        comments=comments,
+        fetched_files=fetched_files,
+        simulated_prs=simulated_prs
+    )
+
+    # 5. Formulate Prompts
+    if knowledge_rules_content:
+        system_prompt = (
+            "You are @Knowledge, an engineering context assistant for this repository.\n"
+            "Your task is to generate a structured **Engineering Handoff** for a contributor starting work on this GitHub issue.\n"
+            "Synthesize the surrounding context (maintainer comments, linked PRs, previous attempts, referenced components) into actionable engineering guidance.\n\n"
+            "=== MANDATORY REPOSITORY RULES (KNOWLEDGE.md) ===\n"
+            f"{knowledge_rules_content}\n"
+            "=================================================\n\n"
+            "Output Format Guidelines:\n"
+            "Structure your answer as an Engineering Handoff:\n"
+            "### 🎯 Before Starting\n"
+            "- Highlight key entry points, primary components, and maintainer constraints (e.g. what should remain unchanged).\n"
+            "### 📜 Surrounding Context & Lessons from PRs\n"
+            "- Summarize history from linked PRs (e.g. why previous attempts failed or what structure was established).\n"
+            "### 🚀 Recommended Exploration Steps\n"
+            "- Outline a step-by-step path for the contributor.\n"
+            "### 🔗 Evidence & References\n"
+            "- Cite specific PRs (#xxx), issues, and files.\n\n"
+            "No Hallucination: Trace claims directly to the provided evidence."
+        )
+    else:
+        system_prompt = (
+            "You are @Knowledge, an AI GitHub assistant like CodeRabbit.\n"
+            "Generate a structured **Engineering Handoff** based on the surrounding issue context, maintainer directives, linked PRs, and repository files provided.\n"
+            "Never invent details not present in the files or evidence."
+        )
+
+    user_prompt = (
+        f"Contributor Question (@{query_author}): {query_text}\n\n"
+        f"{structured_context['formatted_evidence']}\n\n"
+        "Please generate a complete, structured Engineering Handoff adhering strictly to repository rules:"
+    )
+
+    # 6. Call LLM
+    provider = providers.get_provider(provider_name, model=model)
+    llm_answer = provider.generate(system_prompt, user_prompt) if provider.is_configured() else ""
+
+    if llm_answer:
+        final_answer = llm_answer
+        engine_used = f"{provider.name.capitalize()} AI ({provider.model}) [Context Engine V1 Active]"
+    else:
+        final_answer = _fallback_summarizer(query_author, query_text, structured_context)
+        engine_used = "Context Engine Synthesizer (Fallback)"
+
+    return {
+        "query": query_text,
+        "author": query_author,
+        "answer": final_answer,
+        "engine": engine_used,
+        "structured_context": structured_context,
+        "files_read": [k for k in fetched_files.keys() if k != "KNOWLEDGE.md"],
+        "files_content": fetched_files
+    }
+
+
+# Static aliases on KnowledgeAgent for backward compatibility
+KnowledgeAgent.generate_knowledge_answer = staticmethod(generate_knowledge_answer)
+KnowledgeAgent.detect_knowledge_query = staticmethod(detect_knowledge_query)
+

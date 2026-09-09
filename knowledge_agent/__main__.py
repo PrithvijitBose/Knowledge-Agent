@@ -33,7 +33,8 @@ def main():
         repo=args.repo,
         issue_number=args.issue,
         comment_body=args.comment,
-        comment_author=args.author
+        comment_author=args.author,
+        target_type=args.target_type
     )
     if not succeeded:
         print("Error: Knowledge Agent failed to post a reply.")

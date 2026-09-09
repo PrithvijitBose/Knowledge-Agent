@@ -1,6 +1,6 @@
 import re
 from typing import Dict, Any, List, Optional
-from knowledge_agent.config import get_max_file_chars, get_max_comment_chars, get_max_diff_chars, get_max_diff_budget
+from knowledge_agent.config import get_max_file_chars, get_max_comment_chars, get_max_diff_budget
 from knowledge_agent.github import GitHubClient
 from knowledge_agent.intent import IntentCategory
 
@@ -119,10 +119,10 @@ def truncate_diff_hunk_aware(diff_text: Optional[str], max_budget: int = 14000) 
                 if current_chars + len(hunk_header) + 1 < max_budget:
                     result_lines.append(hunk_header)
                     current_chars += len(hunk_header) + 1
-                    for l in compressed_lines:
-                        if current_chars + len(l) + 1 <= max_budget - 50:
-                            result_lines.append(l)
-                            current_chars += len(l) + 1
+                    for line in compressed_lines:
+                        if current_chars + len(line) + 1 <= max_budget - 50:
+                            result_lines.append(line)
+                            current_chars += len(line) + 1
                         else:
                             break
                 remaining_hunks = len(f_diff["hunks"]) - hunk_idx

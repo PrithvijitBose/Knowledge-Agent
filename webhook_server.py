@@ -85,6 +85,9 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON payload: {e}")
 
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid JSON payload: expected JSON object")
+
     action = payload.get("action")
     if action != "created":
         return {"status": "ignored", "reason": f"Action '{action}' not handled"}
