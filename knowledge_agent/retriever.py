@@ -346,6 +346,23 @@ class ContextRetriever:
 
             evidence["matching_files"] = matching_files
 
+        elif intent == IntentCategory.DOC_VERIFICATION:
+            tree = GitHubClient.fetch_repo_tree(token, owner, repo)
+            readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
+            if readme:
+                fetched_files["README.md"] = readme[:max_file]
+
+            code_candidates = [
+                p for p in tree
+                if any(p.endswith(ext) for ext in [".py", ".ts", ".js", ".go", ".rs", ".java"])
+                and not any(ignored in p.lower() for ignored in ["test", "tests", "vendor", "node_modules", ".git"])
+            ][:6]
+            for path in code_candidates:
+                if path not in fetched_files:
+                    content = GitHubClient.fetch_file_content(token, owner, repo, path)
+                    if content:
+                        fetched_files[path] = content[:max_comment]
+
         elif intent == IntentCategory.CONTRIBUTION_GUIDANCE:
             contributing = GitHubClient.fetch_file_content(token, owner, repo, "CONTRIBUTING.md")
             readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
@@ -484,6 +501,20 @@ class ContextRetriever:
 
                 if cross_repo_evidence:
                     evidence["cross_repo_evidence"] = cross_repo_evidence
+        except ImportError:
+            pass
+
+        # Documentation vs Implementation Verification
+        try:
+            from .doc_verifier import DocDiscrepancyDetector
+
+            doc_files = {k: v for k, v in fetched_files.items() if k.endswith(".md")}
+            code_files = {k: v for k, v in fetched_files.items() if not k.endswith(".md") and "." in k and not k.startswith(".")}
+
+            if doc_files and code_files:
+                doc_analysis = DocDiscrepancyDetector.detect_discrepancies(doc_files, code_files)
+                if doc_analysis.get("discrepancies"):
+                    evidence["doc_discrepancies"] = doc_analysis
         except ImportError:
             pass
 

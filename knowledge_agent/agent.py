@@ -131,6 +131,7 @@ class KnowledgeAgent:
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
             "cross_repo_evidence": cross_repo_evidence,
+            "doc_discrepancies": evidence.get("doc_discrepancies"),
             "intent": intent_info["intent"],
             "evidence": evidence,
         }

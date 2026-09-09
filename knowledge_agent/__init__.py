@@ -30,6 +30,12 @@ from knowledge_agent.retriever import RelationshipExtractor, ContextRetriever, t
 from knowledge_agent.prompt import ContextExplainer
 from knowledge_agent.tracer import ExecutionTracer
 from knowledge_agent.context_engine import ContextEngine
+from knowledge_agent.doc_verifier import (
+    DocClaimExtractor,
+    CodeSymbolExtractor,
+    DocDiscrepancyDetector,
+    DiscrepancyType,
+)
 from knowledge_agent.agent import (
     KnowledgeAgent,
     is_bot_triggered,
@@ -69,6 +75,10 @@ __all__ = [
     "ContextExplainer",
     "ExecutionTracer",
     "ContextEngine",
+    "DocClaimExtractor",
+    "CodeSymbolExtractor",
+    "DocDiscrepancyDetector",
+    "DiscrepancyType",
     "KnowledgeAgent",
     "is_bot_triggered",
     "process_github_comment",

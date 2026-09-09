@@ -503,6 +503,13 @@ def main():
                             for f in files.keys():
                                 st.markdown(f"- `{f}`")
 
+                    # Documentation vs Implementation Drift
+                    doc_discrepancies = struct_ctx.get("doc_discrepancies")
+                    if doc_discrepancies and doc_discrepancies.get("discrepancies"):
+                        discs = doc_discrepancies.get("discrepancies", [])
+                        with st.expander(f"⚠️ Documentation vs Implementation Drift ({len(discs)} detected)", expanded=True):
+                            st.markdown(doc_discrepancies.get("summary", ""))
+
                     st.markdown("""
                     <div class="knowledge-box">
                         <h4 style="color: #818cf8; margin-bottom: 10px;">🤖 @Knowledge Engineering Handoff</h4>

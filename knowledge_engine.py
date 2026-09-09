@@ -53,6 +53,10 @@ from knowledge_agent import (
     generate_knowledge_answer,
     detect_knowledge_query,
     call_mistral_api,
+    DocClaimExtractor,
+    CodeSymbolExtractor,
+    DocDiscrepancyDetector,
+    DiscrepancyType,
 )
 from knowledge_agent.__main__ import main
 
@@ -92,6 +96,10 @@ __all__ = [
     "generate_knowledge_answer",
     "detect_knowledge_query",
     "call_mistral_api",
+    "DocClaimExtractor",
+    "CodeSymbolExtractor",
+    "DocDiscrepancyDetector",
+    "DiscrepancyType",
     "AdaptiveDepthEngine",
     "MultiRepoConfig",
     "main",
