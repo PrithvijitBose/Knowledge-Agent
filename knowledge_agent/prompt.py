@@ -96,6 +96,13 @@ class ContextExplainer:
                 "- Investigate commit history, PR discussions, Issue threads, and documentation for evidence of why a decision was made.\n"
                 "- Distinguish between what the evidence establishes vs. what you are inferring."
             )
+        elif intent == IntentCategory.DOC_VERIFICATION:
+            base += (
+                "\nInvestigation strategy: Documentation vs Implementation verification.\n"
+                "- Cross-reference claims made in README.md, docs, and docstrings against actual code AST and symbols.\n"
+                "- Clearly identify missing implementations, signature mismatches, obsolete endpoints, or unreferenced env vars.\n"
+                "- Guide @{author} on what the code actually does vs. what the documentation claimed."
+            )
         else:
             base += (
                 "\nInvestigation strategy: General query.\n"
@@ -259,6 +266,14 @@ class ContextExplainer:
                 for rf_name, rf_content in rel_fetched.items():
                     prompt += f"\nFile [{rel_name}:{rf_name}]:\n```\n{rf_content}\n```\n"
                 prompt += "\n"
+
+        doc_discrepancies = evidence.get("doc_discrepancies")
+        if doc_discrepancies and doc_discrepancies.get("summary"):
+            prompt += (
+                f"\n--- DOCUMENTATION VS IMPLEMENTATION EVIDENCE ---\n"
+                f"{doc_discrepancies['summary']}\n"
+                f"------------------------------------------------\n\n"
+            )
 
         prompt += (
             f"\nAnswer @{query_author}'s question naturally. "

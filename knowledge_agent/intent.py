@@ -9,6 +9,7 @@ class IntentCategory:
     FEATURE_UNDERSTANDING = "FEATURE_UNDERSTANDING"
     HISTORICAL_DECISION = "HISTORICAL_DECISION"
     CONTRIBUTION_GUIDANCE = "CONTRIBUTION_GUIDANCE"
+    DOC_VERIFICATION = "DOC_VERIFICATION"
     GENERAL_QUERY = "GENERAL_QUERY"
 
 
@@ -51,21 +52,25 @@ class IntentClassifier:
         if any(k in query_lower for k in ["contribute", "run tests", "setup dev", "installation", "build", "how do i run", "how to run", "how to build", "how to test"]):
             return {**base_result, "intent": IntentCategory.CONTRIBUTION_GUIDANCE}
 
-        # 4. Architecture Understanding
+        # 4. Documentation Verification / Drift
+        if any(k in query_lower for k in ["verify doc", "verify readme", "doc drift", "docs match", "readme match", "documentation match", "discrepanc", "documentation vs", "verify the documentation"]):
+            return {**base_result, "intent": IntentCategory.DOC_VERIFICATION}
+
+        # 5. Architecture Understanding
         if any(k in query_lower for k in ["architecture", "how does", "how do ", "work in this", "design", "component", "flow", "structure"]):
             if any(k in query_lower for k in ["auth", "authentication", "security", "database", "api", "routing", "workflow"]):
                 return {**base_result, "intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "subsystem"}
             return {**base_result, "intent": IntentCategory.ARCHITECTURE_UNDERSTANDING, "topic": "general"}
 
-        # 5. Feature Understanding
+        # 6. Feature Understanding
         if any(k in query_lower for k in ["feature", "implement", "how is", "how are", "functionality", "capability"]):
             return {**base_result, "intent": IntentCategory.FEATURE_UNDERSTANDING}
 
-        # 6. Historical Decision
+        # 7. Historical Decision
         if any(k in query_lower for k in ["why was", "why did", "decision", "history", "originally", "changed from"]):
             return {**base_result, "intent": IntentCategory.HISTORICAL_DECISION}
 
-        # 7. Issue Understanding
+        # 8. Issue Understanding
         if issues or any(k in query_lower for k in ["issue #", "working on issue", "before contributing to issue", "fix issue"]):
             return {**base_result, "intent": IntentCategory.ISSUE_UNDERSTANDING}
 
