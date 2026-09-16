@@ -189,6 +189,88 @@ def health():
         report = format_discrepancy_report(res["discrepancies"])
         self.assertIn("✅", report)
 
+    def test_code_symbol_extractor_typescript_and_javascript(self):
+        ts_code = """
+import { Request, Response } from 'express';
+
+export interface UserProfile {
+    id: string;
+    email: string;
+}
+
+export type AuthToken = string;
+
+export class AuthManager {
+    validateSession(token: AuthToken): boolean {
+        return true;
+    }
+}
+
+export async function verify_token(token: string, secret: string, algorithm: string = "HS256"): Promise<boolean> {
+    const apiSecret = process.env['API_SECRET'];
+    const clientKey = import.meta.env.VITE_CLIENT_KEY;
+    return true;
+}
+
+export const create_session = async (user_id: string, ttl: number = 3600): Promise<string> => {
+    return user_id;
+};
+
+app.post('/api/v1/auth/login', (req, res) => res.json({ ok: true }));
+        """
+        symbols = CodeSymbolExtractor.extract_symbols("auth.ts", ts_code)
+
+        # Functions & accurate line numbers
+        self.assertIn("verify_token", symbols["functions"])
+        self.assertEqual(symbols["functions"]["verify_token"]["args"], ["token", "secret", "algorithm"])
+        self.assertTrue(symbols["functions"]["verify_token"]["line"] > 1)
+
+        self.assertIn("create_session", symbols["functions"])
+        self.assertEqual(symbols["functions"]["create_session"]["args"], ["user_id", "ttl"])
+        self.assertTrue(symbols["functions"]["create_session"]["line"] > symbols["functions"]["verify_token"]["line"])
+
+        # Classes, Interfaces, Types
+        self.assertIn("AuthManager", symbols["classes"])
+        self.assertIn("UserProfile", symbols["classes"])
+        self.assertIn("AuthToken", symbols["classes"])
+        self.assertIn("validateSession", symbols["classes"]["AuthManager"]["methods"])
+
+        # Routes
+        route_paths = [r["path"] for r in symbols["routes"]]
+        self.assertIn("/api/v1/auth/login", route_paths)
+
+        # Env vars
+        self.assertIn("API_SECRET", symbols["env_vars"])
+        self.assertIn("VITE_CLIENT_KEY", symbols["env_vars"])
+
+        # Exports
+        self.assertIn("AuthManager", symbols["all_exports"])
+        self.assertIn("UserProfile", symbols["all_exports"])
+        self.assertIn("verify_token", symbols["all_exports"])
+
+    def test_discrepancy_detector_with_typescript_codebase(self):
+        docs = {
+            "README.md": """
+# Documentation
+Call `verify_token(token, secret, algorithm)` to validate.
+Uses `AuthManager` to manage sessions.
+Endpoint: `POST /api/v1/auth/login`
+Configured via `API_SECRET`.
+            """
+        }
+        code_files = {
+            "auth.ts": """
+export class AuthManager {}
+export function verify_token(token: string, secret: string, algorithm: string = "HS256") {
+    const s = process.env.API_SECRET;
+    return true;
+}
+app.post('/api/v1/auth/login', handler);
+            """
+        }
+        res = DocDiscrepancyDetector.detect_discrepancies(docs, code_files)
+        self.assertEqual(res["total_discrepancies"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

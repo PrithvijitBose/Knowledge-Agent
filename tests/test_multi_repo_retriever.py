@@ -194,6 +194,53 @@ class TestMultiRepoRetriever(unittest.TestCase):
         self.assertIn("app/routes.py", result["citations"])
         self.assertIn("cross_repo_evidence", result["structured_context"])
 
+    @patch("knowledge_engine.GitHubClient.fetch_repo_tree")
+    @patch("knowledge_engine.GitHubClient.fetch_file_content")
+    @patch("knowledge_engine.GitHubClient.fetch_commit_sha")
+    def test_companion_repo_permission_fallback_and_pat_guidance(self, mock_sha, mock_fetch_file, mock_tree):
+        """Companion repository access failure (403/404) must generate PAT guidance without breaking retrieval."""
+        # Simulate inaccessible companion repository
+        mock_sha.return_value = None
+        mock_tree.return_value = []
+        mock_fetch_file.return_value = "local file content"
+
+        with patch.object(
+            MultiRepoConfig,
+            "parse_related_repositories",
+            return_value=[{"owner": "acme", "repo": "backend-api", "description": "Backend service"}],
+        ):
+            evidence = ContextRetriever.discover_context(
+                token="ghp_test",
+                owner="acme",
+                repo="frontend-web",
+                query="Does layout.tsx call any endpoint in the backend repo?",
+                intent_info={"intent": IntentCategory.FEATURE_UNDERSTANDING, "keywords": ["backend"]},
+            )
+
+            # Verification: diagnostics injected
+            self.assertIn("companion_repo_warnings", evidence)
+            warnings = evidence["companion_repo_warnings"]
+            self.assertTrue(len(warnings) > 0)
+            self.assertIn("acme/backend-api", warnings[0])
+            self.assertIn("Personal Access Token (PAT)", warnings[0])
+            self.assertIn("KNOWLEDGE_GITHUB_TOKEN", warnings[0])
+
+            # Prompt includes diagnostic notice
+            prompt = ContextExplainer.build_user_prompt(evidence, query_author="contributor")
+            self.assertIn("--- COMPANION REPOSITORY NOTICES ---", prompt)
+            self.assertIn("acme/backend-api", prompt)
+
+            # Citations section includes diagnostic note
+            citations = CitationFormatter.build_citations_section(
+                owner="acme",
+                repo="frontend-web",
+                commit_sha="main123",
+                files_read=["src/layout.tsx"],
+                companion_warnings=warnings,
+            )
+            self.assertIn("acme/backend-api", citations)
+            self.assertIn("KNOWLEDGE_GITHUB_TOKEN", citations)
+
 
 if __name__ == "__main__":
     unittest.main()

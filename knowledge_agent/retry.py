@@ -113,7 +113,17 @@ def request_with_retry(
 def _is_rate_limited(response: httpx.Response) -> bool:
     if response.headers.get("Retry-After"):
         return True
-    return response.headers.get("X-RateLimit-Remaining") == "0"
+    if response.headers.get("X-RateLimit-Remaining") == "0":
+        return True
+    try:
+        text = getattr(response, "text", None)
+        if isinstance(text, str) and text:
+            text_lower = text.lower()
+            if any(msg in text_lower for msg in ("secondary rate limit", "rate limit", "abuse detection")):
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def _retry_after_seconds(response: httpx.Response) -> Optional[float]:

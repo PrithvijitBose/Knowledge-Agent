@@ -28,9 +28,13 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Process-wide reentrant lock guarding MemoryStore file accesses
+_MEMORY_LOCK = threading.RLock()
 
 # Explicit opt-in for the persistent location: production sets
 # KNOWLEDGE_MEMORY_PATH=.knowledge/memory.json in knowledge.yml, matching the
@@ -95,42 +99,60 @@ class MemoryStore:
         self.path = Path(path or DEFAULT_MEMORY_PATH)
 
     def _load(self) -> Dict[str, Any]:
-        if not self.path.exists():
-            return {}
-        try:
-            data = json.loads(self.path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
-            return {}
-        # json.loads happily accepts `null`, `[]`, or a dict whose values
-        # aren't dicts -- all valid JSON, all the wrong shape. A caller
-        # calling .get() on a list or None crashes generate_answer() outright
-        # instead of degrading to "no memory" the way a missing/corrupt file
-        # already does. Validate the shape here, once, instead of at every
-        # call site.
-        return data if isinstance(data, dict) else {}
+        with _MEMORY_LOCK:
+            if not self.path.exists():
+                return {}
+            try:
+                data = json.loads(self.path.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+                return {}
+            # json.loads happily accepts `null`, `[]`, or a dict whose values
+            # aren't dicts -- all valid JSON, all the wrong shape. A caller
+            # calling .get() on a list or None crashes generate_answer() outright
+            # instead of degrading to "no memory" the way a missing/corrupt file
+            # already does. Validate the shape here, once, instead of at every
+            # call site.
+            return data if isinstance(data, dict) else {}
 
     def _save(self, data: Dict[str, Any]) -> None:
-        try:
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        except OSError as e:
-            print(f"MemoryStore: could not write {self.path}: {e}")
+        with _MEMORY_LOCK:
+            temp_path = None
+            try:
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                fd, temp_path = tempfile.mkstemp(
+                    dir=self.path.parent,
+                    prefix=f".{self.path.name}.tmp_",
+                    text=True,
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, ensure_ascii=False)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(temp_path, self.path)
+            except OSError as e:
+                print(f"MemoryStore: could not write {self.path}: {e}")
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
 
     def get(self, owner: str, repo: str, intent: str, keywords: List[str]) -> Optional[Dict[str, Any]]:
         """Returns the stored entry for this repo/topic, or None on a miss."""
-        data = self._load()
-        repo_entries = data.get(f"{owner}/{repo}")
-        if not isinstance(repo_entries, dict):
-            return None
-        entry = repo_entries.get(topic_key(intent, keywords))
-        if not isinstance(entry, dict):
-            return None
-        if not isinstance(entry.get("summary", ""), str):
-            return None
-        files_read = entry.get("files_read", [])
-        if not isinstance(files_read, list) or not all(isinstance(path, str) for path in files_read):
-            return None
-        return entry
+        with _MEMORY_LOCK:
+            data = self._load()
+            repo_entries = data.get(f"{owner}/{repo}")
+            if not isinstance(repo_entries, dict):
+                return None
+            entry = repo_entries.get(topic_key(intent, keywords))
+            if not isinstance(entry, dict):
+                return None
+            if not isinstance(entry.get("summary", ""), str):
+                return None
+            files_read = entry.get("files_read", [])
+            if not isinstance(files_read, list) or not all(isinstance(path, str) for path in files_read):
+                return None
+            return entry
 
     def put(
         self,
@@ -146,21 +168,22 @@ class MemoryStore:
         """Stores (or overwrites) the finding for this repo/topic."""
         if not summary:
             return
-        data = self._load()
-        repo_key = f"{owner}/{repo}"
-        repo_entries = data.get(repo_key)
-        if not isinstance(repo_entries, dict):
-            repo_entries = {}
-        data[repo_key] = repo_entries
-        repo_entries[topic_key(intent, keywords)] = {
-            "summary": summary[:SUMMARY_MAX_CHARS],
-            "files_read": files_read,
-            "commit_sha": commit_sha,
-            "intent": intent,
-            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        }
-        self._evict_oldest(repo_entries)
-        self._save(data)
+        with _MEMORY_LOCK:
+            data = self._load()
+            repo_key = f"{owner}/{repo}"
+            repo_entries = data.get(repo_key)
+            if not isinstance(repo_entries, dict):
+                repo_entries = {}
+            data[repo_key] = repo_entries
+            repo_entries[topic_key(intent, keywords)] = {
+                "summary": summary[:SUMMARY_MAX_CHARS],
+                "files_read": files_read,
+                "commit_sha": commit_sha,
+                "intent": intent,
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+            self._evict_oldest(repo_entries)
+            self._save(data)
 
     @staticmethod
     def _evict_oldest(repo_entries: Dict[str, Any]) -> None:

@@ -32,7 +32,8 @@ COMMON_DOC_STOPWORDS: Set[str] = {
     "readme", "todo", "fixme", "url", "uri", "id", "key", "token", "status",
     "path", "file", "dir", "data", "result", "response", "request", "error",
     "config", "json", "yaml", "yml", "toml", "md", "txt", "code", "body", "app",
-    "license", "mit", "apache", "github", "workflow", "actions", "ci", "cd"
+    "license", "mit", "apache", "github", "workflow", "actions", "ci", "cd",
+    "get", "post", "put", "delete", "patch", "head", "options"
 }
 
 
@@ -117,10 +118,15 @@ class DocClaimExtractor:
                             })
 
             # 3. Extract Environment Variables (e.g. `MISTRAL_API_KEY`, `DATABASE_URL`)
+            http_methods = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "TRACE", "CONNECT"}
             for env_match in cls.ENV_VAR_REGEX.finditer(line):
                 env_var = env_match.group(1)
-                # Ignore common uppercase words / markdown noise
-                if env_var.lower() not in COMMON_DOC_STOPWORDS and not env_var.startswith("HTTP_"):
+                # Ignore common uppercase words / markdown noise / HTTP methods
+                if (
+                    env_var.lower() not in COMMON_DOC_STOPWORDS
+                    and not env_var.startswith("HTTP_")
+                    and env_var.upper() not in http_methods
+                ):
                     claim_key = f"ENV:{env_var}".lower()
                     if claim_key not in seen_keys:
                         seen_keys.add(claim_key)
@@ -274,34 +280,150 @@ class CodeSymbolExtractor:
         env_vars: Set[str] = set()
         all_exports: Set[str] = set()
 
-        # Functions (JS/TS/Python regex)
-        for match in re.finditer(r"""(?:function\s+([a-zA-Z0-9_]+)\s*\(([^)]*)\)|(?:const|let|var)\s+([a-zA-Z0-9_]+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>)""", content):
-            name = match.group(1) or match.group(3)
-            raw_args = match.group(2) or match.group(4) or ""
-            args_list = [a.split(":")[0].strip() for a in raw_args.split(",") if a.strip()]
-            if name:
-                functions[name] = {"name": name, "args": args_list, "file": filename, "line": 1}
+        if not content:
+            return {
+                "functions": functions,
+                "classes": classes,
+                "routes": routes,
+                "env_vars": env_vars,
+                "all_exports": all_exports,
+            }
 
-        # Classes
-        for match in re.finditer(r"""class\s+([a-zA-Z0-9_]+)""", content):
+        def get_line_no(char_idx: int) -> int:
+            return content[:char_idx].count("\n") + 1
+
+        def clean_ts_args(raw_args: str) -> List[str]:
+            if not raw_args or not raw_args.strip():
+                return []
+            args_list = []
+            for raw_param in raw_args.split(","):
+                param = raw_param.strip()
+                if not param:
+                    continue
+                # Strip default value
+                param = param.split("=")[0].strip()
+                # Strip TS type annotation
+                param = param.split(":")[0].strip()
+                # Strip optional marker
+                param = param.rstrip("?")
+                # Strip rest parameter prefix
+                param = param.lstrip(".")
+                clean_name = param.strip()
+                if re.match(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$", clean_name):
+                    if clean_name not in {"this", "self"}:
+                        args_list.append(clean_name)
+            return args_list
+
+        # 1. Functions (JS/TS functions, export functions, arrow functions, async functions)
+        func_patterns = [
+            # export [default] [async] function name(args)
+            r"""(?:export\s+(?:default\s+)?)?(?:async\s+)?function\s*\*?\s*([a-zA-Z0-9_$]+)\s*\(([^)]*)\)""",
+            # [export] const/let/var name = [async] (args) =>
+            r"""(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*(?::\s*.*?)?\s*=>""",
+            # [export] const/let/var name = singleArg =>
+            r"""(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s*)?([a-zA-Z0-9_$]+)\s*=>""",
+            # [export] const/let/var name = [async] function [optName](args)
+            r"""(?:export\s+)?(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*(?:async\s+)?function\s*(?:[a-zA-Z0-9_$]+)?\s*\(([^)]*)\)""",
+        ]
+
+        for pat in func_patterns:
+            for match in re.finditer(pat, content):
+                name = match.group(1)
+                raw_args = match.group(2) if match.lastindex and match.lastindex >= 2 else ""
+                if name and name.lower() not in COMMON_DOC_STOPWORDS:
+                    args_list = clean_ts_args(raw_args)
+                    functions[name] = {
+                        "name": name,
+                        "args": args_list,
+                        "file": filename,
+                        "line": get_line_no(match.start()),
+                    }
+
+        # 2. Classes, Interfaces, and Types
+        for match in re.finditer(r"""(?:export\s+(?:default\s+)?)?class\s+([a-zA-Z0-9_$]+)(?:\s+extends\s+[a-zA-Z0-9_$.]+)?(?:\s+implements\s+[a-zA-Z0-9_$,\s]+)?\s*\{""", content):
             cls_name = match.group(1)
-            classes[cls_name] = {"name": cls_name, "methods": [], "file": filename, "line": 1}
+            line_no = get_line_no(match.start())
+            classes[cls_name] = {"name": cls_name, "methods": [], "file": filename, "line": line_no}
+            all_exports.add(cls_name)
 
-        # Express / FastAPI regex routes
-        for match in re.finditer(r"""\.(get|post|put|delete|patch)\s*\(\s*['"]([^'"]+)['"]""", content, re.IGNORECASE):
+        for match in re.finditer(r"""(?:export\s+)?interface\s+([a-zA-Z0-9_$]+)""", content):
+            iface_name = match.group(1)
+            line_no = get_line_no(match.start())
+            if iface_name not in classes:
+                classes[iface_name] = {"name": iface_name, "methods": [], "file": filename, "line": line_no}
+            all_exports.add(iface_name)
+
+        for match in re.finditer(r"""(?:export\s+)?type\s+([a-zA-Z0-9_$]+)\s*=""", content):
+            type_name = match.group(1)
+            line_no = get_line_no(match.start())
+            if type_name not in classes:
+                classes[type_name] = {"name": type_name, "methods": [], "file": filename, "line": line_no}
+            all_exports.add(type_name)
+
+        # Class / object method definitions
+        for match in re.finditer(r"""(?:async\s+)?([a-zA-Z0-9_$]+)\s*\(([^)]*)\)\s*(?::\s*[^{;]+)?\s*\{""", content):
+            m_name = match.group(1)
+            if m_name.lower() not in COMMON_DOC_STOPWORDS and m_name not in {"constructor", "if", "while", "for", "switch", "catch"}:
+                if m_name not in functions:
+                    functions[m_name] = {
+                        "name": m_name,
+                        "args": clean_ts_args(match.group(2)),
+                        "file": filename,
+                        "line": get_line_no(match.start()),
+                    }
+                for c in classes.values():
+                    if m_name not in c["methods"]:
+                        c["methods"].append(m_name)
+
+        # 3. Express / Nest / Fastify / Koa regex routes
+        for match in re.finditer(r"""\.(get|post|put|delete|patch|options|head)\s*\(\s*['"]([^'"]+)['"]""", content, re.IGNORECASE):
             routes.append({
                 "method": match.group(1).upper(),
                 "path": match.group(2),
                 "handler": "",
                 "file": filename,
-                "line": 1,
+                "line": get_line_no(match.start()),
             })
 
-        # Process.env or os.getenv
-        for match in re.finditer(r"""(?:process\.env\.([A-Z0-9_]+)|os\.(?:getenv|environ\.get)\(['"]([A-Z0-9_]+)['"]|os\.environ\[['"]([A-Z0-9_]+)['"]\])""", content):
-            var = match.group(1) or match.group(2) or match.group(3)
+        for match in re.finditer(r"""@(Get|Post|Put|Delete|Patch|Options|Head)\s*\(\s*['"]([^'"]*)['"]\s*\)""", content):
+            routes.append({
+                "method": match.group(1).upper(),
+                "path": match.group(2) or "/",
+                "handler": "",
+                "file": filename,
+                "line": get_line_no(match.start()),
+            })
+
+        # 4. Environment variables
+        for match in re.finditer(r"""(?:process\.env\.([A-Z0-9_]+)|process\.env\[['"]([A-Z0-9_]+)['"]\]|import\.meta\.env\.([A-Z0-9_]+)|import\.meta\.env\[['"]([A-Z0-9_]+)['"]\]|os\.(?:getenv|environ\.get)\(['"]([A-Z0-9_]+)['"]|os\.environ\[['"]([A-Z0-9_]+)['"]\])""", content):
+            var = match.group(1) or match.group(2) or match.group(3) or match.group(4) or match.group(5) or match.group(6)
             if var:
                 env_vars.add(var)
+
+        # 5. Exports
+        for match in re.finditer(r"""export\s*\{([^}]+)\}""", content):
+            raw_exports = match.group(1)
+            for item in raw_exports.split(","):
+                exp_item = item.strip().split(" as ")[-1].strip()
+                if exp_item:
+                    all_exports.add(exp_item)
+
+        for match in re.finditer(r"""export\s+default\s+(?:class\s+|function\s+)?([a-zA-Z0-9_$]+)""", content):
+            exp_id = match.group(1)
+            if exp_id and exp_id not in {"function", "class"}:
+                all_exports.add(exp_id)
+
+        for match in re.finditer(r"""export\s+(?:default\s+)?(?:async\s+)?(?:const|let|var|function|class|interface|type)\s+([a-zA-Z0-9_$]+)""", content):
+            exp_id = match.group(1)
+            if exp_id:
+                all_exports.add(exp_id)
+
+        for match in re.finditer(r"""module\.exports\s*=\s*\{([^}]+)\}""", content):
+            raw_exports = match.group(1)
+            for item in raw_exports.split(","):
+                exp_item = item.split(":")[0].strip()
+                if re.match(r"^[a-zA-Z_$][a-zA-Z0-9_$]*$", exp_item):
+                    all_exports.add(exp_item)
 
         return {
             "functions": functions,

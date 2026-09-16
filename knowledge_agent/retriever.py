@@ -448,6 +448,28 @@ class ContextRetriever:
                     rel_sha = GitHubClient.fetch_commit_sha(token, rel_owner, rel_repo) or GitHubClient.fetch_latest_commit_sha(token, rel_owner, rel_repo)
                     rel_tree = GitHubClient.fetch_repo_tree(token, rel_owner, rel_repo) or []
 
+                    if not rel_tree and not rel_sha:
+                        warning_msg = (
+                            f"⚠️ Note: Companion repository `{rel_owner}/{rel_repo}` could not be accessed. "
+                            f"If this is a private repository, configure a Personal Access Token (PAT) with `repo` "
+                            f"scope in repository secret `KNOWLEDGE_GITHUB_TOKEN`."
+                        )
+                        if "companion_repo_warnings" not in evidence:
+                            evidence["companion_repo_warnings"] = []
+                        evidence["companion_repo_warnings"].append(warning_msg)
+
+                        cross_repo_evidence[repo_key] = {
+                            "owner": rel_owner,
+                            "repo": rel_repo,
+                            "sha": None,
+                            "description": rel_desc,
+                            "files_read": [],
+                            "fetched_files": {},
+                            "access_error": True,
+                            "warning": warning_msg,
+                        }
+                        continue
+
                     # Find relevant candidate files in companion repository
                     target_keywords = list(set(keywords + [
                         "route", "routes", "router", "routers", "endpoint", "endpoints",

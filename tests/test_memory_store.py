@@ -202,6 +202,44 @@ class TestMemoryStore(unittest.TestCase):
         self.assertIsNotNone(entry)
         self.assertEqual(entry["summary"], "new finding")
 
+    def test_concurrent_puts_and_gets(self):
+        """Concurrent puts and gets across multiple threads must not raise or corrupt JSON."""
+        import concurrent.futures
+
+        def worker(idx: int):
+            for i in range(10):
+                self.store.put(
+                    "owner",
+                    "repo",
+                    "ARCHITECTURE_UNDERSTANDING",
+                    [f"topic_{idx}"],
+                    summary=f"Worker {idx} finding {i}",
+                    files_read=[f"file_{idx}_{i}.py"],
+                    commit_sha=f"sha_{idx}",
+                )
+                entry = self.store.get("owner", "repo", "ARCHITECTURE_UNDERSTANDING", [f"topic_{idx}"])
+                self.assertIsNotNone(entry)
+                self.assertIn("Worker", entry["summary"])
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(worker, idx) for idx in range(5)]
+            for fut in concurrent.futures.as_completed(futures):
+                fut.result()
+
+        # Validate final file is valid JSON
+        data = json.loads(Path(self.tmp_path).read_text(encoding="utf-8"))
+        self.assertIn("owner/repo", data)
+
+    def test_atomic_write_leaves_no_temp_files(self):
+        """Temporary files created during atomic replacement must be cleaned up."""
+        self.store.put(
+            "owner", "repo", "ARCHITECTURE_UNDERSTANDING", ["auth"],
+            summary="Clean atomic write.", files_read=["auth.py"], commit_sha="x",
+        )
+        parent = Path(self.tmp_path).parent
+        temp_files = list(parent.glob(f".{Path(self.tmp_path).name}.tmp_*"))
+        self.assertEqual(temp_files, [])
+
 
 if __name__ == "__main__":
     unittest.main()

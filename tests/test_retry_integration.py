@@ -75,6 +75,20 @@ class TestGitHubClientRetryWiring(unittest.TestCase):
         self.assertFalse(ok)
         mock_post.assert_called_once()
 
+    @patch("time.sleep", return_value=None)
+    @patch.object(httpx.Client, "get")
+    def test_get_paginated_retries_transient_failure(self, mock_get, mock_sleep):
+        """GitHubClient._get_paginated retries on transient 500 error instead of aborting immediately."""
+        mock_get.side_effect = [
+            _response(503),
+            _response(200, json_body=[{"id": 1, "body": "Comment 1"}]),
+        ]
+        comments = GitHubClient.fetch_issue_comments("token", "owner", "repo", 42)
+        self.assertEqual(len(comments), 1)
+        self.assertEqual(comments[0]["id"], 1)
+        self.assertEqual(mock_get.call_count, 2)
+        mock_sleep.assert_called_once()
+
 
 class TestProviderRetryWiring(unittest.TestCase):
 

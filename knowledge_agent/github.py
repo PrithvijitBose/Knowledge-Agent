@@ -46,11 +46,13 @@ class GitHubClient:
             with httpx.Client(timeout=10.0) as client:
                 for page in range(1, max_pages + 1):
                     params = {**base_params, "per_page": per_page, "page": page}
-                    res = client.get(url, headers=GitHubClient._get_headers(token), params=params)
-                    if res.status_code != 200:
+                    res = retry.request_with_retry(
+                        lambda: client.get(url, headers=GitHubClient._get_headers(token), params=params)
+                    )
+                    if res is None or res.status_code != 200:
                         break
                     batch = res.json()
-                    if not batch:
+                    if not batch or not isinstance(batch, list):
                         break
                     items.extend(batch)
                     if len(batch) < per_page:
