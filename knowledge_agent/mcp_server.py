@@ -19,9 +19,11 @@ Design notes
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
+import sys
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from knowledge_agent import __version__ as KNOWLEDGE_VERSION
@@ -656,6 +658,22 @@ class KnowledgeContextTools:
 # MCP server wiring
 # ---------------------------------------------------------------------------
 
+def _call(func, *args):
+    """
+    Run a tool with stdout pointed at stderr for the duration of the call.
+
+    On stdio transport stdout carries the JSON-RPC wire. The SDK diverts the
+    descriptor, but on Windows `sys.stdout` keeps its original open handle, so a
+    diagnostic printed inside a tool (the GitHub client emits
+    `GitHub API Error (...)` to stdout) can still reach the wire and corrupt the
+    frame. Scoping the redirect to the tool call keeps diagnostics in the
+    client's log without diverting the protocol, which writes outside this scope.
+    """
+    with contextlib.redirect_stdout(sys.stderr):
+        result = func(*args)
+    return json.dumps(result, indent=2, default=str)
+
+
 def build_server(tools: Optional[KnowledgeContextTools] = None):
     """
     Create the official MCP server instance with all Knowledge tools registered.
@@ -683,7 +701,7 @@ def build_server(tools: Optional[KnowledgeContextTools] = None):
         ),
     )
     def knowledge_get_architecture_context(query: str, repo_path: str = ".") -> str:
-        return json.dumps(tools.get_architecture_context(query, repo_path), indent=2, default=str)
+        return _call(tools.get_architecture_context, query, repo_path)
 
     @server.tool(
         name="knowledge_verify_doc_drift",
@@ -694,7 +712,7 @@ def build_server(tools: Optional[KnowledgeContextTools] = None):
         ),
     )
     def knowledge_verify_doc_drift(doc_path: str, code_dir: str) -> str:
-        return json.dumps(tools.verify_doc_drift(doc_path, code_dir), indent=2, default=str)
+        return _call(tools.verify_doc_drift, doc_path, code_dir)
 
     @server.tool(
         name="knowledge_trace_issue_pr",
@@ -704,13 +722,20 @@ def build_server(tools: Optional[KnowledgeContextTools] = None):
         ),
     )
     def knowledge_trace_issue_pr(issue_number: int) -> str:
-        return json.dumps(tools.trace_issue_pr(issue_number), indent=2, default=str)
+        return _call(tools.trace_issue_pr, issue_number)
 
     return server
 
 
 def run_stdio(tools: Optional[KnowledgeContextTools] = None) -> None:
-    """Serve MCP over stdio (Claude Desktop, Cursor, Claude Code)."""
+    """
+    Serve MCP over stdio (Claude Desktop, Cursor, Claude Code).
+
+    stdout carries the JSON-RPC wire here, so it must stay free of diagnostics.
+    The MCP SDK claims the real stdout descriptor and points `sys.stdout` at
+    stderr itself while serving the transport, which is why stray prints from
+    the GitHub client surface in the client's log instead of corrupting a frame.
+    """
     build_server(tools).run(transport="stdio")
 
 

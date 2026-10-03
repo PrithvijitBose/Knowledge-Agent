@@ -1,5 +1,6 @@
 """Hermetic tests for the Knowledge MCP server (issue #63)."""
 
+import io
 import json
 import os
 import subprocess
@@ -21,8 +22,10 @@ from knowledge_agent.mcp_server import (
     _resolve_repository,
     _score_file,
     _tokenize,
+    _call,
     build_mcp_parser,
     is_mcp_available,
+    run_stdio,
 )
 
 
@@ -372,6 +375,25 @@ class TestMcpServerWiring(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertTrue(payload["evidence"])
 
+    def test_tool_calls_contain_stdout_diagnostics(self):
+        """
+        On stdio, stdout carries the JSON-RPC wire, so a diagnostic printed
+        inside a tool (the GitHub client emits `GitHub API Error (...)` to
+        stdout) must land on stderr instead of corrupting the frame.
+        """
+        captured = io.StringIO()
+        original = sys.stdout
+        sys.stdout = captured
+        try:
+            payload = _call(lambda: (print("stray stdout diagnostic"), {"ok": True})[1])
+        finally:
+            sys.stdout = original
+
+        self.assertNotIn("stray stdout diagnostic", captured.getvalue())
+        self.assertEqual(json.loads(payload), {"ok": True})
+        # The redirect must not leak past the tool call.
+        self.assertIs(sys.stdout, original)
+
     def test_unsupported_transport_raises(self):
         from knowledge_agent.mcp_server import run
 
@@ -382,7 +404,7 @@ class TestMcpServerWiring(unittest.TestCase):
         if not is_mcp_available():
             self.skipTest("official MCP SDK is not installed")
 
-        from knowledge_agent.mcp_server import run_stdio, run_sse
+        from knowledge_agent.mcp_server import run_sse
 
         class Recorder:
             def __init__(self):

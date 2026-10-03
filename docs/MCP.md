@@ -32,8 +32,9 @@ knowledge-agent mcp --stdio
 # Equivalent: python -m knowledge_agent mcp --stdio
 ```
 
-Your client spawns the process and speaks JSON-RPC over stdin/stdout. Nothing is printed to stdout other than
-protocol traffic.
+Your client spawns the process and speaks JSON-RPC over stdin/stdout. stdout is reserved for protocol traffic;
+diagnostics (including the GitHub client's `GitHub API Error (...)` messages) are routed to stderr, so they show
+up in the client's log without corrupting a frame.
 
 ### SSE (for long-running or shared servers)
 
