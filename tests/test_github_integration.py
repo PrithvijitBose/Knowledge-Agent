@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import knowledge_engine
 from knowledge_engine import GitHubClient, RelationshipExtractor, ContextRetriever, KnowledgeAgent, IntentCategory
-import pr_context
+from knowledge_agent import PRContext
 
 
 class TestGitHubIntegrationBugFixes(unittest.TestCase):
@@ -12,8 +12,9 @@ class TestGitHubIntegrationBugFixes(unittest.TestCase):
     @patch.object(GitHubClient, "fetch_issue", return_value={"number": 42, "title": "Test Issue", "body": "Issue text"})
     @patch.object(GitHubClient, "fetch_issue_comments", return_value=[{"body": "You must not touch auth"}])
     def test_pr_context_get_final_context_no_crash(self, mock_comments, mock_issue, mock_file):
-        """Verify B1: pr_context.get_final_context no longer calls dead EngineeringContextGraph."""
-        ctx = pr_context.PRContext.get_final_context("mock_token", "owner", "repo", 42)
+        """Verify B1: PRContext.get_final_context no longer calls dead EngineeringContextGraph."""
+        ctx = PRContext.get_final_context("mock_token", "owner", "repo", 42)
+
         self.assertIsNotNone(ctx)
         self.assertEqual(ctx["intent"], IntentCategory.ISSUE_UNDERSTANDING)
         self.assertEqual(ctx["issue"]["number"], 42)

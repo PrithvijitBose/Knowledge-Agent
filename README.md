@@ -20,7 +20,8 @@
 
 ## 1-Minute GitHub Action Setup
 
-The easiest path is to give [Integration.md](Integration.md) to a repository-aware coding agent. It will inspect the target project, fetch the runtime files, create the workflow and `KNOWLEDGE.md`, and report the secrets and smoke test still needed from a maintainer.
+The easiest path is to give [Integration.md](docs/Integration.md) to a repository-aware coding agent. It will inspect the target project, fetch the runtime files, create the workflow and `KNOWLEDGE.md`, and report the secrets and smoke test still needed from a maintainer.
+
 
 To add Knowledge Bot manually, copy these files into your project:
 
@@ -150,16 +151,23 @@ python -m pytest
 
 ---
 
-## Webhook Server Deployment
+## Interactive Dashboard & Webhook Server
 
+### Streamlit Web Dashboard
+Explore repository context graphs, test questions, and view evidence:
+```bash
+streamlit run apps/app.py
+```
+
+### Webhook Server Deployment
 For real-time webhook deployments with custom domains:
-
 ```bash
 # Start FastAPI Webhook Server on port 8000
-python webhook_server.py
+python apps/webhook_server.py
 ```
 
 Set `GITHUB_WEBHOOK_SECRET` in your environment to automatically enforce HMAC-SHA256 signature verification on inbound webhooks.
+
 
 ---
 

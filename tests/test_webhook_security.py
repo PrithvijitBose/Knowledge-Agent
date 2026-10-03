@@ -5,7 +5,8 @@ import json
 import unittest
 from unittest.mock import patch
 
-import webhook_server
+from apps import webhook_server
+
 
 
 class TestWebhookSecurity(unittest.TestCase):

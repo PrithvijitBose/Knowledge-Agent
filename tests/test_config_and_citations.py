@@ -3,8 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import config
+from knowledge_agent import config
 import knowledge_engine
+
 
 
 class TestConfigAndCitations(unittest.TestCase):

@@ -1,6 +1,7 @@
 # tests/test_adaptive_depth.py
 import unittest
-from adaptive_depth import AdaptiveDepthEngine, DepthLevel
+from knowledge_agent.adaptive_depth import AdaptiveDepthEngine, DepthLevel
+
 
 
 class TestAdaptiveDepthEngine(unittest.TestCase):

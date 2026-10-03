@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 
 from knowledge_engine import GitHubClient
-import providers
+from knowledge_agent import providers
+
 
 
 def _response(status_code: int, json_body=None, headers=None) -> MagicMock:

@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import patch
 from knowledge_engine import ContextRetriever, ContextExplainer, CitationFormatter, KnowledgeAgent, IntentCategory
-from multi_repo import MultiRepoConfig
+from knowledge_agent.multi_repo import MultiRepoConfig
+
 
 
 class TestMultiRepoRetriever(unittest.TestCase):

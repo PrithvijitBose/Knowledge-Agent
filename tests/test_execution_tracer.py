@@ -6,7 +6,9 @@ from unittest.mock import patch, MagicMock
 
 import knowledge_engine
 from knowledge_engine import ExecutionTracer, GitHubClient, KnowledgeAgent, is_bot_triggered
-import webhook_server
+from apps import webhook_server
+
+
 
 
 class TestExecutionTracer(unittest.TestCase):

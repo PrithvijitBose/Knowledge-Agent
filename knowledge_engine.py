@@ -57,8 +57,13 @@ from knowledge_agent import (
     CodeSymbolExtractor,
     DocDiscrepancyDetector,
     DiscrepancyType,
+    PRContext,
+    get_authorization_url,
+    exchange_code_for_token,
+    fetch_pull_request_files,
 )
 from knowledge_agent.__main__ import main
+
 
 __all__ = [
     "__version__",
@@ -90,6 +95,10 @@ __all__ = [
     "ContextExplainer",
     "ExecutionTracer",
     "ContextEngine",
+    "PRContext",
+    "get_authorization_url",
+    "exchange_code_for_token",
+    "fetch_pull_request_files",
     "KnowledgeAgent",
     "is_bot_triggered",
     "process_github_comment",

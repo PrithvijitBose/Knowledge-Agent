@@ -3,7 +3,8 @@ from unittest.mock import MagicMock
 
 import httpx
 
-import retry
+from knowledge_agent import retry
+
 
 
 def _response(status_code: int, headers: dict | None = None) -> MagicMock:

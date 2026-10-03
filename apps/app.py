@@ -1,7 +1,15 @@
 import html
+import sys
+from pathlib import Path
+
+# Add project root to sys.path so knowledge_agent is importable anywhere
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
 import streamlit as st
-import config
-import github_auth
+from knowledge_agent import config
+from knowledge_agent import github as github_auth
 import knowledge_agent
 
 # Page Configuration

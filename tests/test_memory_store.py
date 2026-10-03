@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from memory_store import MemoryStore, topic_key
+from knowledge_agent.memory_store import MemoryStore, topic_key
+
 
 
 class TestTopicKey(unittest.TestCase):
@@ -103,7 +104,7 @@ class TestMemoryStore(unittest.TestCase):
         self.assertEqual(self.store.get("owner", "repo", "ARCHITECTURE_UNDERSTANDING", ["auth"])["summary"], "ok")
 
     def test_eviction_caps_entries_per_repo(self):
-        import memory_store
+        from knowledge_agent import memory_store
         original_cap = memory_store.MAX_ENTRIES_PER_REPO
         memory_store.MAX_ENTRIES_PER_REPO = 3
         try:
@@ -187,7 +188,7 @@ class TestMemoryStore(unittest.TestCase):
     def test_eviction_skips_non_dict_entries_without_crashing(self):
         key = topic_key("ARCHITECTURE_UNDERSTANDING", ["zzz"])
         Path(self.tmp_path).write_text(json.dumps({"owner/repo": {key: "not-a-dict"}}), encoding="utf-8")
-        import memory_store
+        from knowledge_agent import memory_store
 
         original_cap = memory_store.MAX_ENTRIES_PER_REPO
         memory_store.MAX_ENTRIES_PER_REPO = 1
