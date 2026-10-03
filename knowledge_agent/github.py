@@ -1,8 +1,17 @@
 import base64
+import urllib.parse
 from typing import Dict, Any, List, Optional
 import httpx
-from knowledge_agent.config import GITHUB_API_BASE
+from knowledge_agent.config import (
+    GITHUB_API_BASE,
+    GITHUB_AUTH_URL,
+    GITHUB_TOKEN_URL,
+    GITHUB_CLIENT_ID,
+    GITHUB_CLIENT_SECRET,
+    REDIRECT_URI,
+)
 from . import retry
+
 
 
 class GitHubClient:
@@ -46,11 +55,13 @@ class GitHubClient:
             with httpx.Client(timeout=10.0) as client:
                 for page in range(1, max_pages + 1):
                     params = {**base_params, "per_page": per_page, "page": page}
-                    res = client.get(url, headers=GitHubClient._get_headers(token), params=params)
-                    if res.status_code != 200:
+                    res = retry.request_with_retry(
+                        lambda: client.get(url, headers=GitHubClient._get_headers(token), params=params)
+                    )
+                    if res is None or res.status_code != 200:
                         break
                     batch = res.json()
-                    if not batch:
+                    if not batch or not isinstance(batch, list):
                         break
                     items.extend(batch)
                     if len(batch) < per_page:
@@ -312,3 +323,52 @@ class GitHubClient:
         except Exception as e:
             print(f"GitHub API Error (post_issue_comment #{issue_number}): {e}")
             return False
+
+    # Aliases on GitHubClient
+    fetch_pull_request_files = fetch_pr_files
+
+
+def get_authorization_url(state: str = "knowledge_auth_state", scope: str = "read:user repo") -> str:
+    params = {
+        "client_id": GITHUB_CLIENT_ID,
+        "redirect_uri": REDIRECT_URI,
+        "scope": scope,
+        "state": state,
+        "allow_signup": "true",
+    }
+    return f"{GITHUB_AUTH_URL}?{urllib.parse.urlencode(params)}"
+
+
+def exchange_code_for_token(code: str) -> Optional[str]:
+    payload = {
+        "client_id": GITHUB_CLIENT_ID,
+        "client_secret": GITHUB_CLIENT_SECRET,
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+    }
+    headers = {"Accept": "application/json"}
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            res = client.post(GITHUB_TOKEN_URL, data=payload, headers=headers)
+            res.raise_for_status()
+            return res.json().get("access_token")
+    except Exception as e:
+        print(f"Error exchanging code for token: {e}")
+        return None
+
+
+# Module-level aliases
+fetch_github_user = GitHubClient.fetch_user
+fetch_user_repositories = GitHubClient.fetch_repositories
+fetch_repo_issues = GitHubClient.fetch_repo_issues
+fetch_issue_comments = GitHubClient.fetch_issue_comments
+fetch_repo_file_content = GitHubClient.fetch_file_content
+post_issue_comment = GitHubClient.post_issue_comment
+fetch_issue = GitHubClient.fetch_issue
+fetch_pull_request = GitHubClient.fetch_pull_request
+fetch_pr_comments = GitHubClient.fetch_pr_comments
+fetch_pull_request_files = GitHubClient.fetch_pr_files
+fetch_pr_files = GitHubClient.fetch_pr_files
+fetch_issues = fetch_issue
+fetch_pull_requests = fetch_pull_request
+

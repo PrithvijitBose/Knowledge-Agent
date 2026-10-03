@@ -3,7 +3,8 @@ from unittest.mock import MagicMock
 
 import httpx
 
-import retry
+from knowledge_agent import retry
+
 
 
 def _response(status_code: int, headers: dict | None = None) -> MagicMock:
@@ -221,6 +222,18 @@ class TestRequestWithRetry(unittest.TestCase):
             ]
         )
         retry.request_with_retry(request_fn, base_delay=1.0, sleep_fn=sleeps.append)
+        self.assertEqual(sleeps, [1.0])
+
+
+    def test_403_with_secondary_rate_limit_body_is_retried(self):
+        """GitHub secondary rate limit returning 403 with body message is recognized and retried."""
+        sleeps = []
+        resp_403 = _response(403, headers={})
+        resp_403.text = '{"message": "You have exceeded a secondary rate limit. Please wait a few minutes."}'
+        request_fn = MagicMock(side_effect=[resp_403, _response(200)])
+        result = retry.request_with_retry(request_fn, base_delay=1.0, sleep_fn=sleeps.append)
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(request_fn.call_count, 2)
         self.assertEqual(sleeps, [1.0])
 
 

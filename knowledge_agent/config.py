@@ -36,6 +36,15 @@ def is_llm_configured(provider_name: Optional[str] = None) -> bool:
     return providers.get_provider(provider_name).is_configured()
 
 
+def get_provider(provider_name: Optional[str] = None, model: Optional[str] = None):
+    return providers.get_provider(provider_name, model=model)
+
+
+def list_providers():
+    return providers.list_providers()
+
+
+
 def _positive_int_env(name: str, default: int) -> int:
     try:
         value = int(os.getenv(name, str(default)))

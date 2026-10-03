@@ -2,9 +2,16 @@ import os
 import hmac
 import hashlib
 import json
-import config
-import bot
-import knowledge_engine
+import sys
+from pathlib import Path
+
+# Add project root to sys.path so knowledge_agent is importable anywhere
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from knowledge_agent import config
+from knowledge_agent import is_bot_triggered, process_github_comment
 
 try:
     from fastapi import FastAPI, Request, BackgroundTasks, HTTPException
@@ -102,7 +109,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
     author = comment_user.get("login", "")
 
     # Check if @Knowledge or /knowledge is mentioned with a canonical token
-    if not knowledge_engine.is_bot_triggered(body):
+    if not is_bot_triggered(body):
         return {"status": "ignored", "reason": "No @Knowledge or /knowledge trigger in comment body"}
 
     issue = payload.get("issue", {})
@@ -123,7 +130,7 @@ async def github_webhook(request: Request, background_tasks: BackgroundTasks):
 
     # Process headlessly in background task
     background_tasks.add_task(
-        bot.process_github_comment,
+        process_github_comment,
         access_token=token,
         owner=owner,
         repo=repo,
@@ -147,6 +154,6 @@ if app is not None:
 if __name__ == "__main__":
     if uvicorn is not None and app is not None:
         print("🚀 Starting Knowledge GitHub Webhook Server on http://0.0.0.0:8000...")
-        uvicorn.run("webhook_server:app", host="0.0.0.0", port=8000, reload=True)
+        uvicorn.run("apps.webhook_server:app", host="0.0.0.0", port=8000, reload=True)
     else:
-        print("Error: fastapi and uvicorn are required to run webhook_server.py directly.")
+        print("Error: fastapi and uvicorn are required to run webhook_server directly.")

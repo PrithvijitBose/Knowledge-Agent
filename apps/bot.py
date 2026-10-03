@@ -1,34 +1,25 @@
 """
-bot.py — Headless CLI Runner Shim for Knowledge Bot
+bot.py — Headless CLI Runner for Knowledge Bot
 
-Delegates execution to `knowledge_engine.py` for GitHub Actions and headless execution.
+Delegates execution to `knowledge_agent` for GitHub Actions and headless execution.
 """
 
 import sys
 import os
 import argparse
+from pathlib import Path
 from typing import Optional
-import knowledge_engine
+
+try:
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+except (NameError, TypeError):
+    REPO_ROOT = Path.cwd()
+
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
-def process_github_comment(
-    access_token: str,
-    owner: str,
-    repo: str,
-    issue_number: int,
-    comment_body: str,
-    comment_author: str = "Contributor",
-    target_type: Optional[str] = None
-) -> bool:
-    return knowledge_engine.process_github_comment(
-        access_token=access_token,
-        owner=owner,
-        repo=repo,
-        issue_number=issue_number,
-        comment_body=comment_body,
-        comment_author=comment_author,
-        target_type=target_type
-    )
+from knowledge_agent import process_github_comment
 
 
 if __name__ == "__main__":

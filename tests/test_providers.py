@@ -3,7 +3,8 @@ import unittest
 from unittest.mock import patch, MagicMock
 import httpx
 
-import providers
+from knowledge_agent import providers
+
 
 
 class TestMultiLLMProviders(unittest.TestCase):

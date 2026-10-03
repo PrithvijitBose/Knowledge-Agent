@@ -35,4 +35,5 @@ knowledge-agent = "knowledge_agent.__main__:main"
 knowledge = "knowledge_agent.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["knowledge_agent*"]
+include = ["knowledge_agent*", "apps*"]
+

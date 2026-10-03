@@ -109,7 +109,12 @@ class KnowledgeAgent:
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
         citations_text = CitationFormatter.build_citations_section(
-            owner, repo, evidence.get("commit_sha"), files_read, cross_repo_files=cross_repo_evidence
+            owner,
+            repo,
+            evidence.get("commit_sha"),
+            files_read,
+            cross_repo_files=cross_repo_evidence,
+            companion_warnings=evidence.get("companion_repo_warnings"),
         )
 
         discussion_comments = [
@@ -131,6 +136,7 @@ class KnowledgeAgent:
             "referenced_files": evidence.get("fetched_files", {}),
             "fetched_files": evidence.get("fetched_files", {}),
             "cross_repo_evidence": cross_repo_evidence,
+            "companion_repo_warnings": evidence.get("companion_repo_warnings", []),
             "doc_discrepancies": evidence.get("doc_discrepancies"),
             "intent": intent_info["intent"],
             "evidence": evidence,

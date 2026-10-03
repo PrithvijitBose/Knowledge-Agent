@@ -6,7 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from memory_store import MemoryStore, topic_key
+from knowledge_agent.memory_store import MemoryStore, topic_key
+
 
 
 class TestTopicKey(unittest.TestCase):
@@ -103,7 +104,7 @@ class TestMemoryStore(unittest.TestCase):
         self.assertEqual(self.store.get("owner", "repo", "ARCHITECTURE_UNDERSTANDING", ["auth"])["summary"], "ok")
 
     def test_eviction_caps_entries_per_repo(self):
-        import memory_store
+        from knowledge_agent import memory_store
         original_cap = memory_store.MAX_ENTRIES_PER_REPO
         memory_store.MAX_ENTRIES_PER_REPO = 3
         try:
@@ -187,7 +188,7 @@ class TestMemoryStore(unittest.TestCase):
     def test_eviction_skips_non_dict_entries_without_crashing(self):
         key = topic_key("ARCHITECTURE_UNDERSTANDING", ["zzz"])
         Path(self.tmp_path).write_text(json.dumps({"owner/repo": {key: "not-a-dict"}}), encoding="utf-8")
-        import memory_store
+        from knowledge_agent import memory_store
 
         original_cap = memory_store.MAX_ENTRIES_PER_REPO
         memory_store.MAX_ENTRIES_PER_REPO = 1
@@ -201,6 +202,44 @@ class TestMemoryStore(unittest.TestCase):
         entry = self.store.get("owner", "repo", "ARCHITECTURE_UNDERSTANDING", ["fresh"])
         self.assertIsNotNone(entry)
         self.assertEqual(entry["summary"], "new finding")
+
+    def test_concurrent_puts_and_gets(self):
+        """Concurrent puts and gets across multiple threads must not raise or corrupt JSON."""
+        import concurrent.futures
+
+        def worker(idx: int):
+            for i in range(10):
+                self.store.put(
+                    "owner",
+                    "repo",
+                    "ARCHITECTURE_UNDERSTANDING",
+                    [f"topic_{idx}"],
+                    summary=f"Worker {idx} finding {i}",
+                    files_read=[f"file_{idx}_{i}.py"],
+                    commit_sha=f"sha_{idx}",
+                )
+                entry = self.store.get("owner", "repo", "ARCHITECTURE_UNDERSTANDING", [f"topic_{idx}"])
+                self.assertIsNotNone(entry)
+                self.assertIn("Worker", entry["summary"])
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(worker, idx) for idx in range(5)]
+            for fut in concurrent.futures.as_completed(futures):
+                fut.result()
+
+        # Validate final file is valid JSON
+        data = json.loads(Path(self.tmp_path).read_text(encoding="utf-8"))
+        self.assertIn("owner/repo", data)
+
+    def test_atomic_write_leaves_no_temp_files(self):
+        """Temporary files created during atomic replacement must be cleaned up."""
+        self.store.put(
+            "owner", "repo", "ARCHITECTURE_UNDERSTANDING", ["auth"],
+            summary="Clean atomic write.", files_read=["auth.py"], commit_sha="x",
+        )
+        parent = Path(self.tmp_path).parent
+        temp_files = list(parent.glob(f".{Path(self.tmp_path).name}.tmp_*"))
+        self.assertEqual(temp_files, [])
 
 
 if __name__ == "__main__":

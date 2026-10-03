@@ -256,3 +256,58 @@ class ContextEngine:
             lines.append("")
 
         return "\n".join(lines)
+
+
+class PRContext:
+    """PR and Issue Context Extraction helper."""
+
+    @staticmethod
+    def get_issue_context(access_token: str, owner: str, repo: str, issue_number: int) -> Optional[Dict[str, Any]]:
+        issue = GitHubClient.fetch_issue(access_token, owner, repo, issue_number)
+        if not issue:
+            return None
+        comments = GitHubClient.fetch_issue_comments(access_token, owner, repo, issue_number)
+        return {"issue": issue, "comments": comments or []}
+
+    @staticmethod
+    def get_pr_context(access_token: str, owner: str, repo: str, pr_number: int) -> Optional[Dict[str, Any]]:
+        pr = GitHubClient.fetch_pull_request(access_token, owner, repo, pr_number)
+        if not pr:
+            return None
+        pr_comments = GitHubClient.fetch_pr_comments(access_token, owner, repo, pr_number)
+        return {"pr": pr, "pr_comments": pr_comments or []}
+
+    @staticmethod
+    def find_pr_references(issue_context: Optional[Dict[str, Any]]) -> List[int]:
+        if not issue_context or "issue" not in issue_context:
+            return []
+        issue = issue_context.get("issue") or {}
+        combined = f"{issue.get('title') or ''}\n{issue.get('body') or ''}\n" + "\n".join(
+            [(c.get("body") or "") for c in (issue_context.get("comments") or []) if isinstance(c, dict)]
+        )
+        return RelationshipExtractor.extract_referenced_prs(combined)
+
+    @staticmethod
+    def get_final_context(
+        access_token: str,
+        owner: str,
+        repo: str,
+        issue_number: int,
+        target_pr_number: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        from knowledge_agent.intent import IntentCategory
+        from knowledge_agent.retriever import ContextRetriever
+
+        intent_info = {"intent": IntentCategory.ISSUE_UNDERSTANDING, "issue_numbers": [issue_number]}
+        if target_pr_number:
+            intent_info = {"intent": IntentCategory.PR_UNDERSTANDING, "pr_numbers": [target_pr_number]}
+        return ContextRetriever.discover_context(
+            token=access_token,
+            owner=owner,
+            repo=repo,
+            query=f"Issue #{issue_number}",
+            intent_info=intent_info,
+            issue_number=issue_number,
+            pr_number=target_pr_number,
+        )
+

@@ -54,6 +54,7 @@ class CitationFormatter:
         commit_sha: Optional[str],
         files_read: List[str],
         cross_repo_files: Optional[Dict[str, Dict[str, Any]]] = None,
+        companion_warnings: Optional[List[str]] = None,
     ) -> str:
         sections = []
         if files_read:
@@ -92,6 +93,13 @@ class CitationFormatter:
 
             if has_cross:
                 sections.append("\n\n" + "\n".join(cross_lines))
+
+        if companion_warnings:
+            warning_lines = [
+                f"> {w}" if not w.startswith(">") else w
+                for w in companion_warnings
+            ]
+            sections.append("\n\n" + "\n\n".join(warning_lines))
 
         if not sections:
             return ""

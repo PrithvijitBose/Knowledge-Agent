@@ -1,7 +1,8 @@
 import unittest
 from unittest.mock import patch
+import knowledge_agent
+from knowledge_agent import IntentCategory, GitHubClient, RelationshipExtractor, IntentClassifier, KnowledgeAgent
 import knowledge_engine
-from knowledge_engine import IntentCategory, GitHubClient, RelationshipExtractor, IntentClassifier, KnowledgeAgent
 
 
 class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
@@ -171,9 +172,8 @@ class TestIntentDrivenKnowledgeEngine(unittest.TestCase):
     @patch("knowledge_engine.GitHubClient.fetch_pull_request", return_value={"number": 82, "title": "Add OAuth", "body": "Details", "state": "closed", "merged": True, "html_url": "https://github.com/owner/repo/pull/82"})
     @patch("knowledge_engine.GitHubClient.fetch_pr_files", return_value=[{"filename": "auth.py"}])
     def test_context_engine_fetch_linked_prs(self, mock_pr_files, mock_pr):
-        import github_auth
-        self.assertTrue(hasattr(github_auth, "fetch_pull_request_files"), "github_auth must export fetch_pull_request_files")
-        from context_engine import ContextEngine
+        from knowledge_agent.context_engine import ContextEngine
+        self.assertTrue(hasattr(knowledge_agent, "fetch_pull_request_files"), "knowledge_agent must export fetch_pull_request_files")
         res = ContextEngine.fetch_linked_prs("token123", "realowner", "realrepo", [82])
         self.assertEqual(len(res), 1)
         self.assertEqual(res[0]["number"], 82)

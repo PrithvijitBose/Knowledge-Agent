@@ -6,8 +6,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import memory_store
+from knowledge_agent import memory_store
 from knowledge_engine import GitHubClient, KnowledgeAgent, ContextExplainer, IntentCategory
+
 
 
 class TestGenerateAnswerMemoryWiring(unittest.TestCase):

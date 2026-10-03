@@ -13,25 +13,23 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-import config
 import knowledge_agent
 import knowledge_agent.config
 import knowledge_agent.citations
 import knowledge_agent.context_engine
-import context_engine
 import knowledge_engine
-import pr_context
-import webhook_server
+from apps import webhook_server, bot
 
 
 class TestBugFixes(unittest.TestCase):
 
-    def test_context_engine_shim_identity(self):
-        """context_engine.ContextEngine must be identical to knowledge_agent.context_engine.ContextEngine."""
+    def test_context_engine_identity(self):
+        """knowledge_agent.ContextEngine must be identical to knowledge_agent.context_engine.ContextEngine."""
         self.assertIs(
-            context_engine.ContextEngine,
+            knowledge_agent.ContextEngine,
             knowledge_agent.context_engine.ContextEngine
         )
+
 
     def test_generate_knowledge_answer_fallback_structure(self):
         """generate_knowledge_answer must produce structured_context compatible with Streamlit app.py."""
@@ -139,31 +137,33 @@ class TestBugFixes(unittest.TestCase):
 
     def test_bot_exit_code_on_failure(self):
         """bot.py CLI must exit with code 1 when process_github_comment fails."""
+        bot_path = REPO_ROOT / "apps" / "bot.py"
         with patch.object(sys, "argv", [
-            "bot.py",
+            str(bot_path),
             "--owner", "my-org",
             "--repo", "my-repo",
             "--issue", "42",
             "--comment", "@Knowledge explain",
             "--token", "ghp_test_token"
-        ]), patch("bot.process_github_comment", return_value=False), \
+        ]), patch("knowledge_agent.process_github_comment", return_value=False), \
            self.assertRaises(SystemExit) as cm:
+
             # Re-run bot main block
-            with open("bot.py", "r", encoding="utf-8") as f:
-                code = compile(f.read(), "bot.py", "exec")
-                exec(code, {"__name__": "__main__"})
+            with open(bot_path, "r", encoding="utf-8") as f:
+                code = compile(f.read(), str(bot_path), "exec")
+                exec(code, {"__name__": "__main__", "__file__": str(bot_path)})
         self.assertEqual(cm.exception.code, 1)
 
     def test_load_local_config_on_package_config(self):
-        """knowledge_agent.config.load_local_config must work and match config.load_local_config."""
+        """knowledge_agent.config.load_local_config must work and match knowledge_engine.load_local_config."""
         with tempfile.TemporaryDirectory() as tmp_dir:
             cfg_file = Path(tmp_dir) / ".knowledge-agent.json"
             cfg_file.write_text(json.dumps({"test_key": "test_val"}), encoding="utf-8")
 
             res_pkg = knowledge_agent.config.load_local_config(tmp_dir)
-            res_shim = config.load_local_config(tmp_dir)
+            res_facade = knowledge_engine.load_local_config(tmp_dir)
             self.assertEqual(res_pkg, {"test_key": "test_val"})
-            self.assertEqual(res_shim, {"test_key": "test_val"})
+            self.assertEqual(res_facade, {"test_key": "test_val"})
 
     def test_format_citations_table_on_package_citations(self):
         """knowledge_agent.citations.format_citations_table must format markdown table."""
@@ -182,8 +182,9 @@ class TestBugFixes(unittest.TestCase):
             "issue": {"title": None, "body": None},
             "comments": [{"body": None}, {"body": "Refers to PR #88"}]
         }
-        prs = pr_context.PRContext.find_pr_references(issue_ctx)
+        prs = knowledge_agent.PRContext.find_pr_references(issue_ctx)
         self.assertEqual(prs, [88])
+
 
     def test_webhook_server_rejects_non_dict_json(self):
         """webhook_server.github_webhook must return 400 when JSON body is not a JSON object."""
@@ -193,11 +194,12 @@ class TestBugFixes(unittest.TestCase):
         mock_request.body = b'["not", "a", "dict"]'
         mock_request.headers = {"X-Hub-Signature-256": "sha256=dummy", "X-GitHub-Event": "issue_comment"}
 
-        with patch("webhook_server.verify_signature", return_value=True):
+        with patch.object(webhook_server, "verify_signature", return_value=True):
             with self.assertRaises(webhook_server.HTTPException) as cm:
                 asyncio.run(webhook_server.github_webhook(mock_request, MagicMock()))
             self.assertEqual(cm.exception.status_code, 400)
             self.assertIn("JSON object", cm.exception.detail)
+
 
 
 if __name__ == "__main__":

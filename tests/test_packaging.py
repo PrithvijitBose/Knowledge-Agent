@@ -18,63 +18,26 @@ if str(REPO_ROOT) not in sys.path:
 class TestPackagingAndShims(unittest.TestCase):
     """Verifies package integrity, version alignment, and backward compatibility shims."""
 
-    def test_root_shims_reexport_identical_objects(self):
-        """Root shims must re-export identical objects as the canonical package."""
-        import adaptive_depth
+    def test_canonical_package_exports_and_clean_root(self):
+        """Canonical package must export all public objects."""
         import knowledge_agent.adaptive_depth
         import knowledge_agent.memory_store
         import knowledge_agent.multi_repo
         import knowledge_agent.providers
         import knowledge_agent.retry
-        import memory_store
-        import multi_repo
-        import providers
-        import retry
-
-        self.assertIs(
-            providers.get_provider,
-            knowledge_agent.providers.get_provider,
-        )
-        self.assertIs(
-            providers.PROVIDER_REGISTRY,
-            knowledge_agent.providers.PROVIDER_REGISTRY,
-        )
-        self.assertIs(
-            providers.list_providers,
-            knowledge_agent.providers.list_providers,
-        )
-        self.assertIs(
-            retry.request_with_retry,
-            knowledge_agent.retry.request_with_retry,
-        )
-        self.assertIs(
-            memory_store.MemoryStore,
-            knowledge_agent.memory_store.MemoryStore,
-        )
-        self.assertIs(
-            memory_store.topic_key,
-            knowledge_agent.memory_store.topic_key,
-        )
-        self.assertIs(
-            adaptive_depth.AdaptiveDepthEngine,
-            knowledge_agent.adaptive_depth.AdaptiveDepthEngine,
-        )
-        self.assertIs(
-            adaptive_depth.DepthLevel,
-            knowledge_agent.adaptive_depth.DepthLevel,
-        )
-        self.assertIs(
-            multi_repo.MultiRepoConfig,
-            knowledge_agent.multi_repo.MultiRepoConfig,
-        )
-
-        import context_engine
         import knowledge_agent.context_engine
 
-        self.assertIs(
-            context_engine.ContextEngine,
-            knowledge_agent.context_engine.ContextEngine,
-        )
+        self.assertTrue(callable(knowledge_agent.providers.get_provider))
+        self.assertTrue(isinstance(knowledge_agent.providers.PROVIDER_REGISTRY, dict))
+        self.assertTrue(callable(knowledge_agent.providers.list_providers))
+        self.assertTrue(callable(knowledge_agent.retry.request_with_retry))
+        self.assertTrue(callable(knowledge_agent.memory_store.MemoryStore))
+        self.assertTrue(callable(knowledge_agent.memory_store.topic_key))
+        self.assertTrue(callable(knowledge_agent.adaptive_depth.AdaptiveDepthEngine))
+        self.assertTrue(hasattr(knowledge_agent.adaptive_depth, "DepthLevel"))
+        self.assertTrue(callable(knowledge_agent.multi_repo.MultiRepoConfig))
+        self.assertTrue(callable(knowledge_agent.context_engine.ContextEngine))
+
 
     def test_version_matches_pyproject(self):
         """knowledge_agent.__version__ must match version declared in pyproject.toml."""

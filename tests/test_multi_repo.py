@@ -1,7 +1,8 @@
 # tests/test_multi_repo.py
 import unittest
 import os
-from multi_repo import MultiRepoConfig
+from knowledge_agent.multi_repo import MultiRepoConfig
+
 
 
 class TestMultiRepoConfig(unittest.TestCase):

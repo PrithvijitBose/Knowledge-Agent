@@ -267,6 +267,14 @@ class ContextExplainer:
                     prompt += f"\nFile [{rel_name}:{rf_name}]:\n```\n{rf_content}\n```\n"
                 prompt += "\n"
 
+        companion_warnings = evidence.get("companion_repo_warnings")
+        if companion_warnings:
+            prompt += (
+                "\n--- COMPANION REPOSITORY NOTICES ---\n"
+                + "\n".join(companion_warnings)
+                + "\n------------------------------------\n\n"
+            )
+
         doc_discrepancies = evidence.get("doc_discrepancies")
         if doc_discrepancies and doc_discrepancies.get("summary"):
             prompt += (
