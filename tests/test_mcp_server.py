@@ -171,16 +171,24 @@ class TestDocDriftTool(unittest.TestCase):
 
 
 class TestIssueTraceTool(unittest.TestCase):
+    """
+    These guard the no-credential paths, so the environment must be cleared
+    around construction too: `KnowledgeContextTools` resolves GITHUB_TOKEN /
+    KNOWLEDGE_OWNER / KNOWLEDGE_REPO in __init__, so an empty argument falls
+    through to the real environment and these tests would depend on whatever
+    credentials the developer or CI runner happens to have.
+    """
+
     def test_requires_token(self):
-        tools = KnowledgeContextTools(token="", owner="acme", repo="core")
         with patch.dict(os.environ, {}, clear=True):
+            tools = KnowledgeContextTools(token="", owner="acme", repo="core")
             result = tools.trace_issue_pr(42)
         self.assertFalse(result["ok"])
         self.assertIn("token", result["reason"].lower())
 
     def test_requires_repository_target(self):
-        tools = KnowledgeContextTools(token="ghp_x", owner="", repo="")
         with patch.dict(os.environ, {}, clear=True):
+            tools = KnowledgeContextTools(token="ghp_x", owner="", repo="")
             result = tools.trace_issue_pr(42)
         self.assertFalse(result["ok"])
         self.assertIn("owner", result["reason"].lower())
@@ -286,8 +294,8 @@ class TestIssueTraceTool(unittest.TestCase):
         self.assertEqual(result["unknowns"], [])
 
     def test_github_repository_env_slug_resolves_owner_repo(self):
-        tools = KnowledgeContextTools(token="ghp_x", owner="", repo="")
         with patch.dict(os.environ, {"GITHUB_REPOSITORY": "acme/core"}, clear=True):
+            tools = KnowledgeContextTools(token="ghp_x", owner="", repo="")
             self.assertEqual(tools._github_target(None, None), ("acme", "core"))
 
 
