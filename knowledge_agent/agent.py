@@ -16,6 +16,14 @@ class KnowledgeAgent:
     @staticmethod
     def call_mistral_api(prompt_system: str, prompt_user: str) -> str:
         """Invokes Mistral AI API for backward compatibility."""
+        try:
+            import knowledge_engine
+            if not knowledge_engine.is_mistral_configured():
+                return ""
+        except Exception:
+            from . import config
+            if not config.is_mistral_configured():
+                return ""
         return providers.MistralProvider().generate(prompt_system, prompt_user)
 
     @staticmethod
@@ -27,6 +35,17 @@ class KnowledgeAgent:
     ) -> str:
         """Invokes the active or specified LLM provider."""
         provider = providers.get_provider(provider_name, model=model)
+        if provider.name == "mistral":
+            try:
+                import knowledge_engine
+                if not knowledge_engine.is_mistral_configured():
+                    return ""
+            except Exception:
+                from . import config
+                if not config.is_mistral_configured():
+                    return ""
+        elif not provider.is_configured():
+            return ""
         return provider.generate(prompt_system, prompt_user)
 
     @staticmethod
@@ -159,38 +178,100 @@ class KnowledgeAgent:
     def _fallback_answer(query: str, author: str, evidence: Dict[str, Any]) -> str:
         intent = evidence.get("intent", IntentCategory.GENERAL_QUERY)
         fetched_files = evidence.get("fetched_files", {})
-        sections = []
+        sections = ["Knowledge-Agent Bot:"]
 
-        if intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
+        # Extract maintainer directives if any
+        discussion_comments = [
+            *evidence.get("comments", []),
+            *evidence.get("pr_comments", []),
+        ]
+        directives_list = []
+        for c in discussion_comments:
+            if isinstance(c, dict):
+                body = c.get("body", "") or ""
+                if any(w in body.lower() for w in ["don't", "must", "never", "only", "require", "do not"]):
+                    author_login = (c.get("user") or {}).get("login", "Maintainer") if isinstance(c.get("user"), dict) else "Maintainer"
+                    directives_list.append(f"Directive from @{author_login}: {body.strip()}")
+
+        directives_text = "\n\n".join(directives_list) if directives_list else "Do not edit core configuration or constants directly; follow project guidelines."
+
+        if (intent == IntentCategory.PR_UNDERSTANDING or "pr" in evidence) and evidence.get("pr"):
+            pr = evidence["pr"]
+            pr_num = pr.get("number", "")
+            pr_title = pr.get("title", "")
+            pr_body = (pr.get("body") or "").strip()
+
+            sections.append(f"What this PR does:\n\nThis pull request (#{pr_num}: {pr_title}) {pr_body if pr_body else 'addresses changes in this branch.'}")
+
+            test_steps = [
+                f"Pull the branch: `git fetch origin pull/{pr_num}/head:pr-{pr_num} && git checkout pr-{pr_num}`"
+            ]
+            if evidence.get("changed_files"):
+                changed_names = [f.get("filename") for f in evidence["changed_files"] if isinstance(f, dict) and f.get("filename")]
+                if changed_names:
+                    test_steps.append(f"Inspect changed files: {', '.join(f'`{f}`' for f in changed_names[:5])}")
+            test_steps.append("Start the bot / app or run tests (`npm run dev` or `pytest`) to observe behavior without crashing.")
+            sections.append("What to do if you want to test it locally:\n\n" + "\n\n".join(test_steps))
+            sections.append(f"What NOT to touch:\n\n{directives_text}")
+
+        elif (intent == IntentCategory.ISSUE_UNDERSTANDING or "issue" in evidence) and evidence.get("issue"):
+            issue = evidence["issue"]
+            issue_num = issue.get("number", "")
+            issue_title = issue.get("title", "")
+            issue_body = (issue.get("body") or "").strip()
+
+            sections.append(f"What this Issue is about:\n\nIssue #{issue_num}: {issue_title}\n\n{issue_body if issue_body else 'Addresses the reported issue.'}")
+
+            test_steps = [
+                f"Reproduce the issue locally: verify the conditions described in Issue #{issue_num}.",
+                "Run the test suite or local dev server to observe behavior without crashing."
+            ]
+            if fetched_files:
+                relevant = [k for k in fetched_files.keys() if k != "KNOWLEDGE.md"]
+                if relevant:
+                    test_steps.append(f"Inspect relevant files: {', '.join(f'`{f}`' for f in relevant[:5])}")
+            sections.append("What to do if you want to test it locally:\n\n" + "\n\n".join(test_steps))
+            sections.append(f"What NOT to touch:\n\n{directives_text}")
+
+        elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
             arch_files = evidence.get("architecture_files", [])
             if arch_files:
                 file_list = ", ".join([f"`{f}`" for f in arch_files[:4]])
-                sections.append(f"**@{author}**, based on the repository evidence, the architecture-relevant files are: {file_list}.")
-                sections.append(f"Start with `{arch_files[0]}` — it appears to be a core entry point for this subsystem. From there, trace how it connects to the other files listed above.")
+                scope_text = f"**@{author}**, based on the repository evidence, the architecture-relevant files are: {file_list}.\n\nStart with `{arch_files[0]}` — it appears to be a core entry point for this subsystem. From there, trace how it connects to the other files listed above."
             else:
-                sections.append(f"**@{author}**, I wasn't able to find architecture-specific files for this subsystem in the repository.")
+                scope_text = f"**@{author}**, I wasn't able to find architecture-specific files for this subsystem in the repository."
             if "README.md" in fetched_files:
-                sections.append(f"\nThe project documentation provides additional context:\n\n{fetched_files['README.md'][:500]}")
+                scope_text += f"\n\nThe project documentation provides additional context:\n\n{fetched_files['README.md'][:500]}"
+
+            sections.append(f"Scope:\n\n{scope_text}")
+            sections.append("What to do if you want to test it locally:\n\nTrace the execution flow starting from entry point files and run tests (`pytest`) to observe component interactions.")
+            sections.append(f"What NOT to touch:\n\n{directives_text}")
+            if not arch_files:
+                sections.append("> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
 
         elif intent == IntentCategory.REPO_ONBOARDING:
-            sections.append(f"**@{author}**, here is what I found about this repository.")
+            scope_text = f"**@{author}**, here is what I found about this repository."
             if "README.md" in fetched_files:
-                sections.append(f"The `README.md` explains what this project builds:\n\n{fetched_files['README.md'][:500]}")
-            sections.append("\nOnce you understand the project's purpose, explore the main source directories to find the primary entry points. Trace one feature flow end-to-end before diving into secondary modules.")
+                scope_text += f"\n\nThe `README.md` explains what this project builds:\n\n{fetched_files['README.md'][:500]}"
+            scope_text += "\n\nOnce you understand the project's purpose, explore the main source directories to find the primary entry points. Trace one feature flow end-to-end before diving into secondary modules."
 
-        elif intent == IntentCategory.PR_UNDERSTANDING and "pr" in evidence:
-            pr = evidence["pr"]
-            sections.append(f"**@{author}**, Pull Request #{pr.get('number')} ({pr.get('title')}) addresses the following:")
-            sections.append(f"\n{pr.get('body') or 'No description was provided for this PR.'}")
-            sections.append("\nInspect the changed files in the PR to understand which components were modified and trace the impact.")
+            sections.append(f"Scope:\n\n{scope_text}")
+            sections.append("What to do if you want to test it locally:\n\nClone the repository, verify your environment settings, and run tests (`pytest` or `npm test`) to ensure everything passes.")
+            sections.append(f"What NOT to touch:\n\n{directives_text}")
+            if not fetched_files or (len(fetched_files) == 1 and "README.md" in fetched_files and not evidence.get("tree")):
+                sections.append("> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
 
         else:
-            sections.append(f"**@{author}**, here is the context I found based on the repository evidence.")
+            scope_text = f"**@{author}**, here is the context I found based on the repository evidence."
             if "README.md" in fetched_files:
-                sections.append(f"\n{fetched_files['README.md'][:500]}")
-            sections.append("\nStart with the main entry point files in the root directory to trace the execution flow.")
+                scope_text += f"\n\n{fetched_files['README.md'][:500]}"
+            scope_text += "\n\nStart with the main entry point files in the root directory to trace the execution flow."
 
-        sections.append("\n> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
+            sections.append(f"Scope:\n\n{scope_text}")
+            sections.append("What to do if you want to test it locally:\n\nRun the test suite or verify the relevant entry point scripts locally.")
+            sections.append(f"What NOT to touch:\n\n{directives_text}")
+            if not fetched_files or (len(fetched_files) == 1 and "README.md" in fetched_files):
+                sections.append("> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
 
         return "\n\n".join(sections)
 
@@ -302,12 +383,27 @@ def _fallback_summarizer(query_author: str, query_text: str, structured_context:
     fetched_files = structured_context.get("fetched_files", {})
 
     hand_off = [
-        f"### 🎯 Engineering Handoff for Issue #{issue_num}: {issue_title}\n",
-        f"Hi **@{query_author}**, here is the expanded context synthesized from the repository history and linked artifacts:\n",
+        "Knowledge-Agent Bot:\n",
+        f"What this Issue is about:\n\nIssue #{issue_num}: {issue_title}\n\nHi **@{query_author}**, here is the synthesized context from repository history and linked artifacts.\n",
     ]
 
-    # 1. Before Starting section
-    hand_off.append("#### 📋 Before Starting")
+    # Testing / Action steps
+    test_steps = []
+    if fetched_files:
+        test_steps.append(f"- Start by inspecting referenced files: `{', '.join(fetched_files.keys())}`.")
+    if any(isinstance(p, dict) and p.get("number") == 151 for p in linked_prs):
+        test_steps.append("- Pay particular attention to `AuthPanel` modular structure introduced in PR #151.")
+    if any(isinstance(p, dict) and p.get("number") == 143 for p in linked_prs):
+        test_steps.append("- Pay particular attention to mobile behavior to prevent regressions identified in PR #143.")
+    if not test_steps:
+        test_steps.append("- Run the test suite and verify surrounding components locally.")
+
+    hand_off.append("What to do if you want to test it locally:\n")
+    hand_off.extend(test_steps)
+    hand_off.append("")
+
+    # What NOT to touch
+    hand_off.append("What NOT to touch:\n")
     if directives:
         for d in directives:
             if isinstance(d, dict):
@@ -316,31 +412,7 @@ def _fallback_summarizer(query_author: str, query_text: str, structured_context:
                 hand_off.append(f"- **Maintainer Directive**: {d}")
     else:
         hand_off.append("- Review the issue description and ensure surrounding components remain compatible.")
-    hand_off.append("")
 
-    # 2. Historical Context & PRs
-    if linked_prs:
-        hand_off.append("#### 📜 Surrounding Historical Context & Linked PRs")
-        for pr in linked_prs:
-            if isinstance(pr, dict):
-                status = "🟢 Merged" if pr.get("merged") else f"🔴 {pr.get('state', 'Closed').capitalize()}"
-                hand_off.append(f"- **PR #{pr.get('number', '?')} ({status})**: {pr.get('title', '')}")
-                if pr.get("body"):
-                    hand_off.append(f"  *Note:* {pr.get('body')}")
-                if pr.get("changed_files"):
-                    hand_off.append(f"  *Touched files:* `{', '.join(pr.get('changed_files'))}`")
-            else:
-                hand_off.append(f"- **PR #{pr}**")
-        hand_off.append("")
-
-    # 3. Recommended Steps
-    hand_off.append("#### 🚀 Recommended Next Steps")
-    if fetched_files:
-        hand_off.append(f"1. Start by inspecting referenced files: `{', '.join(fetched_files.keys())}`.")
-    if any(isinstance(p, dict) and p.get("number") == 151 for p in linked_prs):
-        hand_off.append("2. Pay particular attention to `AuthPanel` modular structure introduced in PR #151.")
-    if any(isinstance(p, dict) and p.get("number") == 143 for p in linked_prs):
-        hand_off.append("3. Pay particular attention to mobile behavior to prevent regressions identified in PR #143.")
     return "\n".join(hand_off)
 
 
