@@ -49,6 +49,14 @@ from knowledge_agent.agent import (
     detect_knowledge_query,
     call_mistral_api,
 )
+from knowledge_agent.mcp_server import (
+    KnowledgeContextTools,
+    is_mcp_available,
+    build_server as build_mcp_server,
+    run as run_mcp_server,
+    run_stdio as run_mcp_stdio,
+    run_sse as run_mcp_sse,
+)
 
 
 __all__ = [
@@ -95,5 +103,11 @@ __all__ = [
     "generate_knowledge_answer",
     "detect_knowledge_query",
     "call_mistral_api",
+    "KnowledgeContextTools",
+    "is_mcp_available",
+    "build_mcp_server",
+    "run_mcp_server",
+    "run_mcp_stdio",
+    "run_mcp_sse",
 ]
 

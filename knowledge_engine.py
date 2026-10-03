@@ -12,7 +12,8 @@ All components are modularized in the `knowledge_agent` package:
 - knowledge_agent.tracer: ExecutionTracer
 - knowledge_agent.context_engine: ContextEngine
 - knowledge_agent.agent: KnowledgeAgent, is_bot_triggered, process_github_comment, generate_knowledge_answer
-- knowledge_agent.__main__: CLI entry point
+- knowledge_agent.mcp_server: Model Context Protocol server (stdio/SSE) for external coding agents
+- knowledge_agent.__main__: CLI entry point (`knowledge-agent mcp --stdio`)
 """
 
 from knowledge_agent.adaptive_depth import AdaptiveDepthEngine
@@ -58,6 +59,12 @@ from knowledge_agent import (
     DocDiscrepancyDetector,
     DiscrepancyType,
     PRContext,
+    KnowledgeContextTools,
+    is_mcp_available,
+    build_mcp_server,
+    run_mcp_server,
+    run_mcp_stdio,
+    run_mcp_sse,
     get_authorization_url,
     exchange_code_for_token,
     fetch_pull_request_files,
@@ -109,6 +116,12 @@ __all__ = [
     "CodeSymbolExtractor",
     "DocDiscrepancyDetector",
     "DiscrepancyType",
+    "KnowledgeContextTools",
+    "is_mcp_available",
+    "build_mcp_server",
+    "run_mcp_server",
+    "run_mcp_stdio",
+    "run_mcp_sse",
     "AdaptiveDepthEngine",
     "MultiRepoConfig",
     "main",

@@ -29,7 +29,7 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install httpx python-dotenv
+          pip install httpx python-dotenv "mcp>=1.9.0"
 
       - name: Run Hermetic Unit Tests
         run: |
