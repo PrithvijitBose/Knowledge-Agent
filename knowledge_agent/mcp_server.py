@@ -57,7 +57,7 @@ set is empty, say the repository does not show it instead of inventing it.
 """.strip()
 
 DEFAULT_CODE_EXTENSIONS: Tuple[str, ...] = (
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go", ".rs", ".java",
 )
 DEFAULT_DOC_EXTENSIONS: Tuple[str, ...] = (".md", ".rst", ".txt")
 
@@ -231,7 +231,9 @@ def _resolve_repository(
     if candidate and os.path.isdir(candidate):
         return candidate, os.path.abspath(candidate), {}, "local"
 
-    if candidate and _looks_like_slug(candidate) and token:
+    if candidate and _looks_like_slug(candidate):
+        if not token:
+            return candidate, None, {}, "missing_token"
         owner, repo = candidate.split("/", 1)
         tree = GitHubClient.fetch_repo_tree(token, owner, repo) or []
         files: Dict[str, str] = {}
@@ -311,6 +313,14 @@ class KnowledgeContextTools:
             )
 
         source_label, root, remote_files, source_kind = _resolve_repository(repo_path, self.token)
+
+        if source_kind == "missing_token":
+            return self._failure(
+                "knowledge_get_architecture_context",
+                f"Repository slug `{source_label}` requires a GitHub token to resolve. Set GITHUB_TOKEN.",
+                query=query,
+                repo_path=repo_path,
+            )
 
         if source_kind == "missing":
             return self._failure(
@@ -669,8 +679,16 @@ def _call(func, *args):
     frame. Scoping the redirect to the tool call keeps diagnostics in the
     client's log without diverting the protocol, which writes outside this scope.
     """
-    with contextlib.redirect_stdout(sys.stderr):
-        result = func(*args)
+    try:
+        with contextlib.redirect_stdout(sys.stderr):
+            result = func(*args)
+    except Exception as exc:
+        result = {
+            "ok": False,
+            "error": str(exc),
+            "evidence": [],
+            "unknowns": [f"Unexpected error during tool execution: {exc}"],
+        }
     return json.dumps(result, indent=2, default=str)
 
 
@@ -721,8 +739,12 @@ def build_server(tools: Optional[KnowledgeContextTools] = None):
             "previous attempts with touched files, and the issues those PRs reference."
         ),
     )
-    def knowledge_trace_issue_pr(issue_number: int) -> str:
-        return _call(tools.trace_issue_pr, issue_number)
+    def knowledge_trace_issue_pr(
+        issue_number: int,
+        owner: Optional[str] = None,
+        repo: Optional[str] = None,
+    ) -> str:
+        return _call(tools.trace_issue_pr, issue_number, owner, repo)
 
     return server
 

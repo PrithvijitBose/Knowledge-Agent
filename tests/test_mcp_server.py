@@ -105,6 +105,12 @@ class TestArchitectureContextTool(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertTrue(result["unknowns"])
 
+    def test_slug_without_token_reports_clear_error(self):
+        with patch.dict(os.environ, {}, clear=True):
+            result = KnowledgeContextTools(token="").get_architecture_context("auth", "owner/repo")
+        self.assertFalse(result["ok"])
+        self.assertIn("requires a GitHub token", result["reason"])
+
 
 class TestDocDriftTool(unittest.TestCase):
     def setUp(self):
@@ -335,6 +341,11 @@ class TestHelperFunctions(unittest.TestCase):
         self.assertIsNone(root)
         self.assertEqual(files, {})
 
+    def test_resolve_repository_handles_slug_without_token(self):
+        label, root, files, kind = _resolve_repository("acme/core", None)
+        self.assertEqual(kind, "missing_token")
+        self.assertEqual(label, "acme/core")
+
 
 class TestMcpServerWiring(unittest.TestCase):
     def test_sdk_availability_probe_does_not_raise(self):
@@ -363,6 +374,8 @@ class TestMcpServerWiring(unittest.TestCase):
         self.assertIn("query", by_name["knowledge_get_architecture_context"].input_schema["properties"])
         self.assertIn("doc_path", by_name["knowledge_verify_doc_drift"].input_schema["properties"])
         self.assertIn("issue_number", by_name["knowledge_trace_issue_pr"].input_schema["properties"])
+        self.assertIn("owner", by_name["knowledge_trace_issue_pr"].input_schema["properties"])
+        self.assertIn("repo", by_name["knowledge_trace_issue_pr"].input_schema["properties"])
 
     def test_tool_call_returns_json_serializable_payload(self):
         if not is_mcp_available():
@@ -401,6 +414,16 @@ class TestMcpServerWiring(unittest.TestCase):
         self.assertEqual(json.loads(payload), {"ok": True})
         # The redirect must not leak past the tool call.
         self.assertIs(sys.stdout, original)
+
+    def test_call_catches_unexpected_exceptions(self):
+        def bad_tool():
+            raise RuntimeError("unexpected failure")
+
+        payload = _call(bad_tool)
+        data = json.loads(payload)
+        self.assertFalse(data["ok"])
+        self.assertIn("unexpected failure", data["error"])
+        self.assertTrue(data["unknowns"])
 
     def test_unsupported_transport_raises(self):
         from knowledge_agent.mcp_server import run
@@ -484,6 +507,12 @@ class TestMcpCli(unittest.TestCase):
         )
         self.assertEqual(args.owner, "acme")
         self.assertEqual(args.target_type, None)
+
+    def test_legacy_cli_help_mentions_mcp_mode(self):
+        from knowledge_agent import __main__ as cli
+
+        parser = cli.build_bot_parser()
+        self.assertIn("mcp", parser.description.lower())
 
 
 class TestMcpPackageExports(unittest.TestCase):

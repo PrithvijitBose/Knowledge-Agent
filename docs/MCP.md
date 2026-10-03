@@ -74,13 +74,13 @@ Runs `DocDiscrepancyDetector` and returns mismatches between documentation claim
 missing implementations, signature mismatches, and environment-variable drift. `doc_path` accepts a single
 document or a directory of documents.
 
-### `knowledge_trace_issue_pr(issue_number: int)`
+### `knowledge_trace_issue_pr(issue_number: int, owner: Optional[str] = None, repo: Optional[str] = None)`
 
 Returns the complete bidirectional history for an issue: maintainer directives, contributor discussion, previous
 attempts (linked PRs with merge state and changed files), and the issues those PRs themselves reference.
 
-Requires `GITHUB_TOKEN`. The repository is resolved from `KNOWLEDGE_OWNER` + `KNOWLEDGE_REPO`, or from
-`GITHUB_REPOSITORY` in the form `owner/repo`.
+Requires `GITHUB_TOKEN`. The repository can be passed directly via `owner` and `repo`, or resolved from
+`KNOWLEDGE_OWNER` + `KNOWLEDGE_REPO`, or `GITHUB_REPOSITORY` in the form `owner/repo`.
 
 ---
 

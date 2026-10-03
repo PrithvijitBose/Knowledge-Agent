@@ -5,8 +5,9 @@ from knowledge_agent.agent import process_github_comment
 
 
 def build_bot_parser() -> argparse.ArgumentParser:
-    """Parser for the legacy single-shot comment invocation."""
-    parser = argparse.ArgumentParser(description="Knowledge Engine CLI Runner")
+    parser = argparse.ArgumentParser(
+        description="Knowledge Engine CLI Runner. For MCP server mode, run: knowledge-agent mcp --help"
+    )
     parser.add_argument("--owner", required=True, help="GitHub repository owner")
     parser.add_argument("--repo", required=True, help="GitHub repository name")
     parser.add_argument("--issue", type=int, required=True, help="Issue or PR number")
