@@ -25,8 +25,14 @@ currently operating on. A successful integration:
 5. gives the maintainer an exact secrets checklist and a smoke-test procedure.
 
 Knowledge responds to `@Knowledge`, `@knowledge`, `/Knowledge`, and `/knowledge`
-comments on issues and pull requests. It gathers repository context and posts an
-answer back to GitHub; it does not autonomously edit, commit, or merge code.
+comments on issues and pull requests. It gathers repository context, enforces
+rules from `KNOWLEDGE.md`, and posts a structured engineering handoff back to GitHub
+using the standard **Knowledge-Agent Bot** format:
+- **What this PR does: / What this Issue is about: / Scope:** High-signal summary of the problem, solution, and affected components.
+- **What to do if you want to test it locally: / Key Changes: / Verification checklist:** Actionable steps, branch checkout commands, and test verification.
+- **What NOT to touch:** Maintainer directives, protected configurations, and critical architecture boundaries.
+
+Knowledge does not autonomously edit, commit, or merge code.
 
 ## 2. Rules before making changes
 
@@ -38,8 +44,9 @@ answer back to GitHub; it does not autonomously edit, commit, or merge code.
   file already exists, compare it with the intended integration, preserve
   compatible content, and ask the developer before replacing incompatible
   content.
-- Do not invent secret names. The workflow may use only the names documented in
-  this prompt (`MISTRAL_API_KEY`, `GEMINI_API_KEY`, and the built-in
+- Do not invent secret names. The workflow should use the supported provider
+  secret names (`MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+  `GEMINI_API_KEY`, `GROQ_API_KEY`, optional `LLM_PROVIDER`, and the built-in
   `GITHUB_TOKEN`).
 - Never put an API key, GitHub token, or other credential in a committed file,
   generated example, command history, or workflow literal.
@@ -155,9 +162,14 @@ jobs:
 
       - name: Run Knowledge bot
         env:
-          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || secrets.LLM_PROVIDER || '' }}
+          MISTRAL_MODEL: ${{ vars.MISTRAL_MODEL || secrets.MISTRAL_MODEL || 'codestral-latest' }}
           KNOWLEDGE_MEMORY_PATH: .knowledge/memory.json
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
@@ -254,7 +266,7 @@ Run only safe, relevant checks available in the target repository:
 
 - validate YAML syntax with an installed YAML parser or the repository's CI
   tooling (do not claim validation if no parser is available);
-- verify that all six runtime files exist side by side and compile/import
+- verify that `knowledge_engine.py` and the `knowledge_agent/` package exist side by side and compile/import
   without executing a provider call;
 - check that the workflow references the exact secret and environment names;
 - run `git diff --check`; and
@@ -266,17 +278,20 @@ unannounced validation step. Do not log secret values.
 ## 4. Maintainer setup checklist
 
 After editing the files, tell the maintainer to open **Settings → Secrets and
-variables → Actions** in the target GitHub repository and add at least one of:
+variables → Actions** in the target GitHub repository and add at least one supported LLM secret:
 
-- `MISTRAL_API_KEY` — a Mistral API key; or
-- `GEMINI_API_KEY` — a Google Gemini API key.
+- `MISTRAL_API_KEY` — Mistral AI key (uses `codestral-latest` by default);
+- `OPENAI_API_KEY` — OpenAI key (uses `gpt-4o-mini` by default);
+- `ANTHROPIC_API_KEY` — Anthropic key (uses `claude-3-5-sonnet-20241022` by default);
+- `GEMINI_API_KEY` — Google Gemini key (uses `gemini-1.5-flash` by default); or
+- `GROQ_API_KEY` — Groq Cloud key (uses `llama-3.3-70b-versatile` by default).
+
+Optionally set `LLM_PROVIDER` in repository variables or secrets (`mistral`, `openai`, `anthropic`, `gemini`, `groq`, or `ollama`) to specify the active provider.
 
 The workflow also receives GitHub's automatically provided `GITHUB_TOKEN`; the
 maintainer must not create or paste that token into a file. The workflow's
 permissions are limited to reading repository contents and writing issue/PR
-comments. If both provider secrets are set, explain which provider the fetched
-runtime selects and how to set the runtime's documented provider selector if a
-different choice is desired.
+comments.
 
 ## 5. First smoke test
 
