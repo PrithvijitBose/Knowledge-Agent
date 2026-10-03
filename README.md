@@ -15,6 +15,7 @@
 - **Hermetic Testing:** 100% offline unit tests with mock fixtures and automated GitHub Actions CI matrix across Python 3.10, 3.11, and 3.12.
 - **Dual Deployment Options:** Serverless GitHub Actions runner or standalone FastAPI webhook server with HMAC-SHA256 signature verification.
 - **Streamlit Web Dashboard:** Interactive UI for exploring repository context graphs, testing questions, and visualizing evidence sets.
+- **Native MCP Server:** Exposes the bounded evidence engine, AST doc-verifier, and issue/PR lineage to Cursor, Claude Desktop, Claude Code, and other coding agents over stdio or SSE — see [MCP.md](docs/MCP.md).
 
 ---
 
@@ -148,6 +149,64 @@ knowledge-agent --help
 # Run all hermetic unit tests offline
 python -m pytest
 ```
+
+---
+
+## MCP Server — Engineering Context for Coding Agents
+
+Knowledge runs as a native [Model Context Protocol](https://modelcontextprotocol.io) server so coding agents
+(Cursor, Claude Desktop, Claude Code, Windsurf, Devin) can query grounded engineering context instead of
+hallucinating your architecture.
+
+```bash
+pip install -e ".[mcp]"
+
+# stdio transport (Claude Desktop, Cursor, Claude Code)
+knowledge-agent mcp --stdio
+
+# or SSE transport for a long-running/shared endpoint
+knowledge-agent mcp --sse --host 127.0.0.1 --port 8765
+```
+
+**Tools exposed:** `knowledge_get_architecture_context`, `knowledge_verify_doc_drift`, `knowledge_trace_issue_pr`.
+
+**Claude Desktop** (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "knowledge": {
+      "command": "knowledge-agent",
+      "args": ["mcp", "--stdio"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here",
+        "KNOWLEDGE_OWNER": "your-org",
+        "KNOWLEDGE_REPO": "your-repo"
+      }
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json`):
+
+```json
+{
+  "mcpServers": {
+    "knowledge": {
+      "command": "knowledge-agent",
+      "args": ["mcp", "--stdio"],
+      "env": {
+        "GITHUB_TOKEN": "ghp_your_token_here",
+        "KNOWLEDGE_OWNER": "your-org",
+        "KNOWLEDGE_REPO": "your-repo"
+      }
+    }
+  }
+}
+```
+
+Full setup, tool contracts, and troubleshooting: **[docs/MCP.md](docs/MCP.md)**.
 
 ---
 
