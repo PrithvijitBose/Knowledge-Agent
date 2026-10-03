@@ -54,7 +54,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || secrets.LLM_PROVIDER || '' }}
-          MISTRAL_MODEL: ${{ vars.MISTRAL_MODEL || 'mistral-small-2506' }}
+          MISTRAL_MODEL: ${{ vars.MISTRAL_MODEL || secrets.MISTRAL_MODEL || 'codestral-latest' }}
           KNOWLEDGE_MEMORY_PATH: .knowledge/memory.json
           COMMENT_BODY: ${{ github.event.comment.body }}
           COMMENT_AUTHOR: ${{ github.event.comment.user.login }}

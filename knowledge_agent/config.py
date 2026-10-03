@@ -10,7 +10,7 @@ GITHUB_CLIENT_SECRET = os.getenv("GITHUB_CLIENT_SECRET", "")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8501")
 
 MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
-MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-2506")
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "codestral-latest")
 MISTRAL_API_URL = "https://api.mistral.ai/v1/chat/completions"
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_AUTH_URL = "https://github.com/login/oauth/authorize"

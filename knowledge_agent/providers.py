@@ -52,7 +52,7 @@ class MistralProvider(BaseLLMProvider):
     name = "mistral"
 
     def default_model(self) -> str:
-        return os.getenv("MISTRAL_MODEL", "mistral-small-2506")
+        return os.getenv("MISTRAL_MODEL", "codestral-latest")
 
     def is_configured(self) -> bool:
         return bool(os.getenv("MISTRAL_API_KEY"))
@@ -68,36 +68,47 @@ class MistralProvider(BaseLLMProvider):
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ],
-            "temperature": temperature,
-            "max_tokens": max_tokens
-        }
 
-        try:
-            with httpx.Client(timeout=30.0) as client:
-                # A generation call is not idempotent and costs real money --
-                # a dropped connection after the provider already generated a
-                # response must not be blindly retried, since we can't tell
-                # whether it went through. Only retry on a definite rejection
-                # (5xx / rate limit), never on a connection-level exception.
-                res = retry.request_with_retry(
-                    lambda: client.post(url, headers=headers, json=payload),
-                    retry_on_connection_error=False,
-                )
-                if res is None:
-                    return ""
-                res.raise_for_status()
-                data = res.json()
-                choices = data.get("choices", [])
-                if choices and "message" in choices[0]:
-                    return choices[0]["message"].get("content", "").strip() or ""
-        except Exception as e:
-            print(f"Error invoking Mistral AI API ({self.model}): {e}")
+        # Build list of candidate models in case the chosen model is rate-limited or unavailable
+        candidates = [self.model]
+        for fallback in ["codestral-latest", "mistral-small-latest", "mistral-small-2506"]:
+            if fallback not in candidates:
+                candidates.append(fallback)
+
+        for candidate_model in candidates:
+            payload = {
+                "model": candidate_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            }
+
+            try:
+                with httpx.Client(timeout=30.0) as client:
+                    res = retry.request_with_retry(
+                        lambda: client.post(url, headers=headers, json=payload),
+                        retry_on_connection_error=False,
+                    )
+                    if res is None:
+                        break
+                    if res.status_code == 429:
+                        print(f"Mistral AI model {candidate_model} rate-limited (429), trying fallback model...")
+                        continue
+                    res.raise_for_status()
+                    data = res.json()
+                    choices = data.get("choices", [])
+                    if choices and "message" in choices[0]:
+                        content = choices[0]["message"].get("content", "").strip() or ""
+                        if content:
+                            self.model = candidate_model
+                            return content
+            except Exception as e:
+                print(f"Error invoking Mistral AI API ({candidate_model}): {e}")
+                break
+
         return ""
 
 

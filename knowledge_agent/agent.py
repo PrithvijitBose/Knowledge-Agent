@@ -201,7 +201,11 @@ class KnowledgeAgent:
             pr_title = pr.get("title", "")
             pr_body = (pr.get("body") or "").strip()
 
-            sections.append(f"What this PR does:\n\nThis pull request (#{pr_num}: {pr_title}) {pr_body if pr_body else 'addresses changes in this branch.'}")
+            raw_lines = [l.strip() for l in pr_body.splitlines() if l.strip() and not l.strip().startswith("<!--")]
+            meaningful = [l for l in raw_lines if not l.startswith("#")]
+            pr_summary = " ".join(meaningful[:3]) if meaningful else "Addresses changes in this pull request."
+
+            sections.append(f"What this PR does:\n\n**PR #{pr_num}: {pr_title}**\n\n{pr_summary}")
 
             test_steps = [
                 f"Pull the branch: `git fetch origin pull/{pr_num}/head:pr-{pr_num} && git checkout pr-{pr_num}`"
@@ -210,8 +214,8 @@ class KnowledgeAgent:
                 changed_names = [f.get("filename") for f in evidence["changed_files"] if isinstance(f, dict) and f.get("filename")]
                 if changed_names:
                     test_steps.append(f"Inspect changed files: {', '.join(f'`{f}`' for f in changed_names[:5])}")
-            test_steps.append("Start the bot / app or run tests (`npm run dev` or `pytest`) to observe behavior without crashing.")
-            sections.append("What to do if you want to test it locally:\n\n" + "\n\n".join(test_steps))
+            test_steps.append("Run the test suite or dev server locally to observe behavior without crashing.")
+            sections.append("What to do if you want to test it locally:\n\n" + "\n\n".join(f"- {s}" for s in test_steps))
             sections.append(f"What NOT to touch:\n\n{directives_text}")
 
         elif (intent == IntentCategory.ISSUE_UNDERSTANDING or "issue" in evidence) and evidence.get("issue"):
@@ -220,17 +224,20 @@ class KnowledgeAgent:
             issue_title = issue.get("title", "")
             issue_body = (issue.get("body") or "").strip()
 
-            sections.append(f"What this Issue is about:\n\nIssue #{issue_num}: {issue_title}\n\n{issue_body if issue_body else 'Addresses the reported issue.'}")
+            raw_lines = [l.strip() for l in issue_body.splitlines() if l.strip() and not l.strip().startswith("<!--")]
+            meaningful = [l for l in raw_lines if not l.startswith("#")]
+            problem_summary = " ".join(meaningful[:3]) if meaningful else "Addresses the reported issue."
 
-            test_steps = [
-                f"Reproduce the issue locally: verify the conditions described in Issue #{issue_num}.",
-                "Run the test suite or local dev server to observe behavior without crashing."
-            ]
-            if fetched_files:
-                relevant = [k for k in fetched_files.keys() if k != "KNOWLEDGE.md"]
-                if relevant:
-                    test_steps.append(f"Inspect relevant files: {', '.join(f'`{f}`' for f in relevant[:5])}")
-            sections.append("What to do if you want to test it locally:\n\n" + "\n\n".join(test_steps))
+            sections.append(f"What this Issue is about:\n\n**Issue #{issue_num}: {issue_title}**\n\n{problem_summary}")
+
+            test_steps = []
+            relevant = [k for k in fetched_files.keys() if k not in ["KNOWLEDGE.md", "README.md"]]
+            if relevant:
+                test_steps.append(f"Inspect referenced files: {', '.join(f'`{f}`' for f in relevant[:5])}")
+            test_steps.append(f"Reproduce the conditions described in Issue #{issue_num}.")
+            test_steps.append("Run the test suite locally (`pytest` or `npm test`) to verify current behavior.")
+
+            sections.append("What to do if you want to test it locally:\n\n" + "\n\n".join(f"- {s}" for s in test_steps))
             sections.append(f"What NOT to touch:\n\n{directives_text}")
 
         elif intent == IntentCategory.ARCHITECTURE_UNDERSTANDING:
@@ -240,35 +247,30 @@ class KnowledgeAgent:
                 scope_text = f"**@{author}**, based on the repository evidence, the architecture-relevant files are: {file_list}.\n\nStart with `{arch_files[0]}` — it appears to be a core entry point for this subsystem. From there, trace how it connects to the other files listed above."
             else:
                 scope_text = f"**@{author}**, I wasn't able to find architecture-specific files for this subsystem in the repository."
-            if "README.md" in fetched_files:
-                scope_text += f"\n\nThe project documentation provides additional context:\n\n{fetched_files['README.md'][:500]}"
 
             sections.append(f"Scope:\n\n{scope_text}")
-            sections.append("What to do if you want to test it locally:\n\nTrace the execution flow starting from entry point files and run tests (`pytest`) to observe component interactions.")
+            sections.append("What to do if you want to test it locally:\n\n- Trace the execution flow starting from entry point files.\n- Run tests (`pytest`) to observe component interactions.")
             sections.append(f"What NOT to touch:\n\n{directives_text}")
             if not arch_files:
                 sections.append("> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
 
         elif intent == IntentCategory.REPO_ONBOARDING:
-            scope_text = f"**@{author}**, here is what I found about this repository."
-            if "README.md" in fetched_files:
-                scope_text += f"\n\nThe `README.md` explains what this project builds:\n\n{fetched_files['README.md'][:500]}"
-            scope_text += "\n\nOnce you understand the project's purpose, explore the main source directories to find the primary entry points. Trace one feature flow end-to-end before diving into secondary modules."
+            scope_text = f"**@{author}**, here is what I found about this repository.\n\nExplore the main source directories to find the primary entry points and trace one feature flow end-to-end."
 
             sections.append(f"Scope:\n\n{scope_text}")
-            sections.append("What to do if you want to test it locally:\n\nClone the repository, verify your environment settings, and run tests (`pytest` or `npm test`) to ensure everything passes.")
+            sections.append("What to do if you want to test it locally:\n\n- Clone the repository and install dependencies.\n- Run the test suite (`pytest` or `npm test`) to verify your environment.")
             sections.append(f"What NOT to touch:\n\n{directives_text}")
             if not fetched_files or (len(fetched_files) == 1 and "README.md" in fetched_files and not evidence.get("tree")):
                 sections.append("> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
 
         else:
             scope_text = f"**@{author}**, here is the context I found based on the repository evidence."
-            if "README.md" in fetched_files:
-                scope_text += f"\n\n{fetched_files['README.md'][:500]}"
-            scope_text += "\n\nStart with the main entry point files in the root directory to trace the execution flow."
+            relevant = [k for k in fetched_files.keys() if k not in ["KNOWLEDGE.md", "README.md"]]
+            if relevant:
+                scope_text += f"\n\nRelevant files identified: {', '.join(f'`{f}`' for f in relevant[:5])}"
 
             sections.append(f"Scope:\n\n{scope_text}")
-            sections.append("What to do if you want to test it locally:\n\nRun the test suite or verify the relevant entry point scripts locally.")
+            sections.append("What to do if you want to test it locally:\n\n- Run the test suite or verify the relevant entry point scripts locally.")
             sections.append(f"What NOT to touch:\n\n{directives_text}")
             if not fetched_files or (len(fetched_files) == 1 and "README.md" in fetched_files):
                 sections.append("> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
