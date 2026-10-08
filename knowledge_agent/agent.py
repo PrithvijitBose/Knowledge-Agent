@@ -114,6 +114,8 @@ class KnowledgeAgent:
         # 4. LLM Call via Provider Router
         provider = providers.get_provider(provider_name, model=model)
         llm_answer = KnowledgeAgent.call_llm(system_prompt, user_prompt, provider_name=provider_name, model=model)
+        if llm_answer:
+            llm_answer = ContextExplainer.sanitize_output(llm_answer)
 
         files_read = [k for k in evidence.get("fetched_files", {}).keys() if k != "KNOWLEDGE.md"]
         cross_repo_evidence = evidence.get("cross_repo_evidence")
@@ -127,6 +129,7 @@ class KnowledgeAgent:
 
         if not llm_answer:
             llm_answer = KnowledgeAgent._fallback_answer(query, author, evidence)
+            llm_answer = ContextExplainer.sanitize_output(llm_answer)
         citations_text = CitationFormatter.build_citations_section(
             owner,
             repo,
