@@ -79,6 +79,14 @@ class ContextExplainer:
             "18. **Dynamic Narrative vs. Structured Handoffs**:\n"
             "- For code explanations, architectural inquiries, feature walk-throughs, and onboarding: write a natural, connected narrative explaining entry points, data passing, and component interactions. Do NOT force responses into synthetic checklists, artificial sub-headings (like 'Scope:', 'What to do if you want to test it locally:', 'What NOT to touch:'), or markdown tables.\n"
             "- For Issue and PR triage handoffs: organize under '### Knowledge-Agent Bot:' with '#### What this PR does:' (or '#### What this Issue is about:'), '#### What to do if you want to test it locally:', and '#### What NOT to touch:'. Even within these sections, explain the narrative flow and connective reasoning naturally rather than dumping robotic bullet lists.\n\n"
+            "19. **Contribution Guidance (Structured Investigation Pathways)**: "
+            "When helping a contributor start work, tackle an issue, or prepare a contribution, empower them with an **investigation path** instead of guessing an unverified code solution or prescribing speculative code patches. "
+            "Prescribing speculative code solutions leads contributors astray and creates churn for maintainers. "
+            "Provide a clear 3-step investigation trajectory:\n"
+            "  - Step 1 (Starting Point & Reproduction): The primary entry point or reproduction file to inspect first and WHY.\n"
+            "  - Step 2 (State & Subsystem Dynamics): The downstream service, state transformation, or component boundary to inspect next.\n"
+            "  - Step 3 (Test Suite & Verification Commands): The relevant test files (e.g. `tests/test_*.py`) and verification commands (e.g. `pytest`, `npm test`) to run locally to reproduce and validate.\n"
+            "Explicitly state what remains unknown or requires maintainer consensus. Do NOT write speculative code patches.\n\n"
             "FEW-SHOT CONTRASTIVE GUIDELINES (Mechanical Template vs. Natural Senior Staff Explanation):\n\n"
             "❌ Mechanical Template (Bad):\n"
             "### Architecture & Component Flow\n"
@@ -146,9 +154,14 @@ class ContextExplainer:
             )
         elif intent == IntentCategory.CONTRIBUTION_GUIDANCE:
             base += (
-                "\nInvestigation strategy: Contribution preparation.\n"
-                "- Investigate relevant architecture, conventions, implementation flow, and existing discussions.\n"
-                "- Help @{author} understand what they need before contributing — not just where files are."
+                "\nInvestigation strategy: Contribution Guidance (Structured Investigation Pathways).\n"
+                "- Do NOT prescribe speculative code solutions, invent unverified patches, or write the fix for @{author}.\n"
+                "- Empower @{author} with a structured 3-step investigation trajectory:\n"
+                "  1. Starting Point & Reproduction: Identify the entry point or reproduction file to inspect first and explain WHY it matters.\n"
+                "  2. State & Subsystem Dynamics: Trace the state transformation, data flow, or service boundary to inspect next.\n"
+                "  3. Test Suite & Verification Commands: Provide the specific test files to inspect and verification commands to run locally (e.g. `pytest`, `npm test`).\n"
+                "- Clearly highlight what remains unknown or requires maintainer consensus.\n"
+                "- Emphasize investigation methodology and local test verification over speculative code fixes."
             )
         elif intent == IntentCategory.HISTORICAL_DECISION:
             base += (
@@ -343,6 +356,10 @@ class ContextExplainer:
                 f"------------------------------------------------\n\n"
             )
 
+        test_files = evidence.get("test_files")
+        if test_files:
+            prompt += "Related Test Files Found:\n" + "\n".join([f"- {f}" for f in test_files]) + "\n\n"
+
         if intent in (IntentCategory.ISSUE_UNDERSTANDING, IntentCategory.PR_UNDERSTANDING):
             prompt += (
                 f"\nAnswer @{query_author}'s question cleanly using the Knowledge-Agent Bot format:\n\n"
@@ -354,6 +371,15 @@ class ContextExplainer:
                 "#### What NOT to touch:\n"
                 "<Crucial constraints, directives from maintainers, or files/configs that must not be modified.>\n\n"
                 "Ground claims strictly in evidence. State what is unknown. Do not include generic boilerplate."
+            )
+        elif intent == IntentCategory.CONTRIBUTION_GUIDANCE:
+            prompt += (
+                f"\nProvide structured contribution guidance for @{query_author} without prescribing speculative code solutions.\n"
+                "Construct a clear 3-step investigation trajectory:\n"
+                "1. Starting Point & Reproduction: The primary entry point or reproduction file to inspect first and WHY it matters.\n"
+                "2. State & Subsystem Dynamics: The downstream service, state transformation, or component boundary to inspect next.\n"
+                "3. Test Suite & Verification Commands: The relevant test files and verification commands to run locally to confirm expected behavior.\n"
+                "State what remains unknown or requires maintainer consensus. Do NOT prescribe unverified code patches."
             )
         else:
             prompt += (

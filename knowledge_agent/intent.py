@@ -45,11 +45,21 @@ class IntentClassifier:
             return {**base_result, "intent": IntentCategory.PR_UNDERSTANDING}
 
         # 2. Repo Onboarding
-        if any(k in query_lower for k in ["just joined", "new here", "learn this codebase", "how should i learn", "onboard", "where do i start", "prerequisites"]):
+        if any(k in query_lower for k in ["just joined", "new here", "learn this codebase", "how should i learn", "onboard", "prerequisites"]):
             return {**base_result, "intent": IntentCategory.REPO_ONBOARDING}
 
-        # 3. Contribution Guidance
-        if any(k in query_lower for k in ["contribute", "run tests", "setup dev", "installation", "build", "how do i run", "how to run", "how to build", "how to test"]):
+        # 3. Contribution Guidance & Structured Investigation Pathways
+        contribution_cues = [
+            "where should i start", "where do i start", "where to start", "where should i begin", "where do i begin",
+            "how do i tackle", "how to tackle", "how should i tackle", "tackle this", "tackle issue",
+            "contribution guide", "guide for issue", "contributor guide",
+            "how to contribute", "how do i contribute", "how can i contribute",
+            "contribute", "run tests", "setup dev", "installation", "build",
+            "how do i run", "how to run", "how to build", "how to test",
+        ]
+        if any(k in query_lower for k in contribution_cues):
+            if "before contributing to issue" in query_lower:
+                return {**base_result, "intent": IntentCategory.ISSUE_UNDERSTANDING}
             return {**base_result, "intent": IntentCategory.CONTRIBUTION_GUIDANCE}
 
         # 4. Documentation Verification / Drift

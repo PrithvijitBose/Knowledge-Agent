@@ -188,6 +188,167 @@ class TestHumanEngineeringKT(unittest.TestCase):
         self.assertIn("depth_score", res)
         self.assertNotIn(f"depth_score: {res['depth_score']}", res["answer"])
 
+    def test_intent_classifier_routes_contribution_queries(self):
+        """Verifies IntentClassifier accurately routes where to start, how to tackle,
+        and contribution guide questions to CONTRIBUTION_GUIDANCE (Issue #59)."""
+        from knowledge_agent.intent import IntentClassifier
+
+        q1 = IntentClassifier.classify("@Knowledge Where should I start to solve Issue #42?")
+        self.assertEqual(q1["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+        self.assertEqual(q1["issue_numbers"], [42])
+
+        q2 = IntentClassifier.classify("where should i start")
+        self.assertEqual(q2["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+
+        q3 = IntentClassifier.classify("how do i tackle this")
+        self.assertEqual(q3["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+
+        q4 = IntentClassifier.classify("contribution guide for issue #15")
+        self.assertEqual(q4["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+        self.assertEqual(q4["issue_numbers"], [15])
+
+        q5 = IntentClassifier.classify("how do i tackle issue #99")
+        self.assertEqual(q5["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+        self.assertEqual(q5["issue_numbers"], [99])
+
+        # Contrast: general issue context request vs. investigation pathway request
+        q6 = IntentClassifier.classify("@Knowledge What do I need to know before contributing to Issue #43?")
+        self.assertEqual(q6["intent"], IntentCategory.ISSUE_UNDERSTANDING)
+
+    @patch("knowledge_agent.github.GitHubClient.fetch_repo_tree")
+    @patch("knowledge_agent.github.GitHubClient.fetch_file_content")
+    @patch("knowledge_agent.github.GitHubClient.fetch_issue")
+    @patch("knowledge_agent.github.GitHubClient.fetch_issue_comments")
+    def test_context_retriever_gathers_related_test_files_for_contribution_queries(
+        self, mock_comments, mock_issue, mock_file_content, mock_repo_tree
+    ):
+        """Verifies ContextRetriever discovers related test files alongside primary files
+        for contribution queries (Issue #59)."""
+        from knowledge_agent.retriever import ContextRetriever
+
+        mock_issue.return_value = {
+            "number": 42,
+            "title": "Bug in auth prompt formatting",
+            "body": "Inspect knowledge_agent/prompt.py for issues."
+        }
+        mock_comments.return_value = []
+        mock_repo_tree.return_value = [
+            "knowledge_agent/prompt.py",
+            "tests/test_prompt.py",
+            "pyproject.toml",
+            "README.md",
+            "CONTRIBUTING.md"
+        ]
+
+        def fake_file_content(token, owner, repo, path, ref=None):
+            if path == "knowledge_agent/prompt.py":
+                return "class ContextExplainer:\n    pass"
+            elif path == "tests/test_prompt.py":
+                return "def test_prompt():\n    assert True"
+            elif path == "pyproject.toml":
+                return "[tool.pytest]\nminversion = '6.0'"
+            elif path == "CONTRIBUTING.md":
+                return "Run `pytest` to verify your changes."
+            return None
+
+        mock_file_content.side_effect = fake_file_content
+
+        evidence = ContextRetriever.discover_context(
+            token="ghp_test",
+            owner="testorg",
+            repo="testrepo",
+            query="@Knowledge Where should I start to solve Issue #42?",
+            intent_info={
+                "intent": IntentCategory.CONTRIBUTION_GUIDANCE,
+                "issue_numbers": [42],
+                "files": ["knowledge_agent/prompt.py"],
+                "keywords": ["prompt"]
+            },
+            issue_number=42
+        )
+
+        self.assertEqual(evidence["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+        self.assertIn("test_files", evidence)
+        self.assertIn("tests/test_prompt.py", evidence["test_files"])
+        self.assertIn("tests/test_prompt.py", evidence["fetched_files"])
+        self.assertIn("knowledge_agent/prompt.py", evidence["fetched_files"])
+        self.assertIn("CONTRIBUTING.md", evidence["fetched_files"])
+        self.assertIn("pyproject.toml", evidence["fetched_files"])
+
+    def test_prompt_synthesis_for_contribution_guidance(self):
+        """Verifies build_system_prompt and build_user_prompt construct the 3-step
+        investigation pathway without prescribing speculative code fixes (Issue #59)."""
+        sys_prompt = ContextExplainer.build_system_prompt(
+            intent=IntentCategory.CONTRIBUTION_GUIDANCE,
+            knowledge_rules=None,
+            author="DevCandidate"
+        )
+        self.assertIn("Contribution Guidance (Structured Investigation Pathways)", sys_prompt)
+        self.assertIn("Do NOT prescribe speculative code solutions", sys_prompt)
+        self.assertIn("Starting Point & Reproduction", sys_prompt)
+        self.assertIn("State & Subsystem Dynamics", sys_prompt)
+        self.assertIn("Test Suite & Verification Commands", sys_prompt)
+
+        user_prompt = ContextExplainer.build_user_prompt({
+            "intent": IntentCategory.CONTRIBUTION_GUIDANCE,
+            "query": "@Knowledge Where should I start to solve Issue #42?",
+            "owner": "testorg",
+            "repo": "testrepo",
+            "fetched_files": {
+                "knowledge_agent/prompt.py": "code",
+                "tests/test_prompt.py": "test_code"
+            },
+            "test_files": ["tests/test_prompt.py"]
+        }, query_author="DevCandidate")
+
+        self.assertIn("Related Test Files Found:", user_prompt)
+        self.assertIn("tests/test_prompt.py", user_prompt)
+        self.assertIn("Provide structured contribution guidance", user_prompt)
+        self.assertIn("Do NOT prescribe unverified code patches", user_prompt)
+
+    @patch("knowledge_agent.retriever.ContextRetriever.discover_context")
+    @patch("knowledge_agent.agent.KnowledgeAgent.call_llm")
+    def test_agent_contribution_guidance_outputs_investigation_pathway(self, mock_call_llm, mock_discover):
+        """Hermetically verifies generate_answer produces a structured investigation pathway
+        with entry point, dynamics, and test commands (Issue #59)."""
+        mock_discover.return_value = {
+            "intent": IntentCategory.CONTRIBUTION_GUIDANCE,
+            "owner": "testorg",
+            "repo": "testrepo",
+            "issue": {"number": 42, "title": "Prompt formatting bug", "body": "See prompt.py"},
+            "fetched_files": {
+                "knowledge_agent/prompt.py": "code",
+                "tests/test_prompt.py": "tests",
+                "pyproject.toml": "[tool.pytest]"
+            },
+            "test_files": ["tests/test_prompt.py"],
+            "commit_sha": "abc1234"
+        }
+
+        investigation_answer = (
+            "Here is the investigation pathway for Issue #42:\n\n"
+            "1. **Starting Point & Reproduction**: Start with `knowledge_agent/prompt.py`. This is where `ContextExplainer.build_system_prompt` formats prompt rules.\n"
+            "2. **State & Subsystem Dynamics**: Next, trace how `KnowledgeAgent.generate_answer` consumes the synthesized prompt and delegates to the provider router.\n"
+            "3. **Test Suite & Verification Commands**: Run `pytest tests/test_prompt.py` locally to reproduce current behavior and verify adjustments.\n\n"
+            "Align final interface changes with maintainers before opening a PR."
+        )
+        mock_call_llm.return_value = investigation_answer
+
+        res = KnowledgeAgent.generate_answer(
+            token="ghp_test",
+            owner="testorg",
+            repo="testrepo",
+            query="@Knowledge Where should I start to solve Issue #42?",
+            author="NewContributor"
+        )
+
+        self.assertEqual(res["intent"], IntentCategory.CONTRIBUTION_GUIDANCE)
+        self.assertIn("Starting Point & Reproduction", res["answer"])
+        self.assertIn("knowledge_agent/prompt.py", res["answer"])
+        self.assertIn("State & Subsystem Dynamics", res["answer"])
+        self.assertIn("Test Suite & Verification Commands", res["answer"])
+        self.assertIn("pytest tests/test_prompt.py", res["answer"])
+
 
 if __name__ == "__main__":
     unittest.main()

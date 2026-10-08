@@ -266,6 +266,42 @@ class KnowledgeAgent:
             if not fetched_files or (len(fetched_files) == 1 and "README.md" in fetched_files and not evidence.get("tree")):
                 sections.append("> I couldn't find enough project-specific information to answer this reliably. Please contact a maintainer or ask them to provide the relevant documentation.")
 
+        elif intent == IntentCategory.CONTRIBUTION_GUIDANCE:
+            target_issue = evidence.get("issue")
+            issue_str = f" for Issue #{target_issue['number']}" if target_issue and target_issue.get("number") else ""
+            primary_files = [
+                f for f in fetched_files.keys()
+                if f not in ["KNOWLEDGE.md", "README.md", "CONTRIBUTING.md", "DEPENDENCIES", "pyproject.toml", "package.json"]
+                and "test" not in f.lower()
+            ]
+            test_files = [f for f in fetched_files.keys() if "test" in f.lower() and f != "tests"]
+
+            pathway = [
+                f"**@{author}**, here is a structured investigation pathway to get started{issue_str} without prescribing speculative code solutions:\n"
+            ]
+
+            if primary_files:
+                pathway.append(f"1. **Starting Point & Reproduction**: Start by inspecting `{primary_files[0]}`. This is the primary component where execution enters this subsystem.")
+            else:
+                pathway.append("1. **Starting Point & Reproduction**: Identify the entry point component or reproduction script associated with this behavior to observe the issue.")
+
+            if len(primary_files) > 1:
+                pathway.append(f"2. **State & Subsystem Dynamics**: Next, trace how `{primary_files[0]}` passes state or delegates to `{primary_files[1]}` to observe runtime behavior.")
+            else:
+                pathway.append("2. **State & Subsystem Dynamics**: Trace the downstream service or state transformations triggered by this entry point.")
+
+            test_cmd = "pytest" if "pyproject.toml" in fetched_files or any(f.endswith(".py") for f in fetched_files) else "npm test"
+            if test_files:
+                pathway.append(f"3. **Test Suite & Verification Commands**: Inspect `{test_files[0]}` and run tests locally (`{test_cmd}`) to observe expected behavior before making modifications.")
+            else:
+                pathway.append(f"3. **Test Suite & Verification Commands**: Run the test suite locally (`{test_cmd}`) to establish a verification baseline.")
+
+            pathway.append("\nNote: Specific design decisions and implementation details should be aligned with repository maintainers.")
+
+            sections.append(f"Investigation Pathway:\n\n" + "\n\n".join(pathway))
+            sections.append(f"What to do if you want to test it locally:\n\n- Run the local test suite (`{test_cmd}`) before making changes.\n- Add a reproduction test case to verify current behavior.")
+            sections.append(f"What NOT to touch:\n\n{directives_text}")
+
         else:
             scope_text = f"**@{author}**, here is the context I found based on the repository evidence."
             relevant = [k for k in fetched_files.keys() if k not in ["KNOWLEDGE.md", "README.md"]]

@@ -364,16 +364,99 @@ class ContextRetriever:
                         fetched_files[path] = content[:max_comment]
 
         elif intent == IntentCategory.CONTRIBUTION_GUIDANCE:
+            target_issue = issue_number or (intent_info.get("issue_numbers", [])[0] if intent_info.get("issue_numbers") else None)
+            if target_issue:
+                iss = GitHubClient.fetch_issue(token, owner, repo, target_issue)
+                evidence["issue_fetch_ok"] = iss is not None
+                comments = GitHubClient.fetch_issue_comments(token, owner, repo, target_issue)
+                evidence["issue"] = iss or {"number": target_issue, "title": f"Issue #{target_issue}", "body": query}
+                evidence["comments"] = comments or []
+            else:
+                evidence["issue_fetch_ok"] = False
+                evidence["issue"] = None
+                evidence["comments"] = []
+
             contributing = GitHubClient.fetch_file_content(token, owner, repo, "CONTRIBUTING.md")
             readme = GitHubClient.fetch_file_content(token, owner, repo, "README.md")
-            reqs = GitHubClient.fetch_file_content(token, owner, repo, "requirements.txt") or GitHubClient.fetch_file_content(token, owner, repo, "package.json")
+            pyproject = GitHubClient.fetch_file_content(token, owner, repo, "pyproject.toml")
+            package_json = GitHubClient.fetch_file_content(token, owner, repo, "package.json")
+            reqs = GitHubClient.fetch_file_content(token, owner, repo, "requirements.txt")
 
             if contributing:
                 fetched_files["CONTRIBUTING.md"] = contributing[:max_file]
             if readme:
                 fetched_files["README.md"] = readme[:max_comment]
-            if reqs:
+            if pyproject:
+                fetched_files["pyproject.toml"] = pyproject[:max_diff]
+            elif package_json:
+                fetched_files["package.json"] = package_json[:max_diff]
+            elif reqs:
                 fetched_files["DEPENDENCIES"] = reqs[:max_diff]
+
+            tree = GitHubClient.fetch_repo_tree(token, owner, repo)
+
+            # Extract referenced files from query and issue
+            candidate_files = list(intent_info.get("files", []))
+            if evidence.get("issue"):
+                iss = evidence["issue"]
+                iss_text = f"{iss.get('title', '')}\n{iss.get('body', '')}\n" + "\n".join(
+                    [(c.get('body') or '') for c in evidence.get("comments", []) if isinstance(c, dict)]
+                )
+                for rf in RelationshipExtractor.extract_referenced_files(iss_text):
+                    if rf not in candidate_files:
+                        candidate_files.append(rf)
+
+            # If no explicit files referenced, search tree for matching primary files by keywords
+            if not candidate_files and keywords:
+                for path in tree:
+                    path_lower = path.lower()
+                    if any(kw in path_lower for kw in keywords) and not any(t in path_lower for t in ["test", "tests", "spec", ".github", "docs"]):
+                        candidate_files.append(path)
+                        if len(candidate_files) >= 4:
+                            break
+
+            # Fetch primary source files
+            primary_fetched = []
+            for path in candidate_files[:4]:
+                if path not in fetched_files and path != "KNOWLEDGE.md":
+                    content = GitHubClient.fetch_file_content(token, owner, repo, path)
+                    if content:
+                        fetched_files[path] = content[:max_comment]
+                        primary_fetched.append(path)
+
+            # Gather related test files alongside primary source files
+            related_test_files = []
+            for pfile in (primary_fetched or candidate_files):
+                base_name = pfile.split("/")[-1].rsplit(".", 1)[0].lower()
+                for tpath in tree:
+                    tpath_lower = tpath.lower()
+                    if ("test" in tpath_lower or "spec" in tpath_lower) and (base_name in tpath_lower):
+                        if tpath not in related_test_files:
+                            related_test_files.append(tpath)
+
+            if keywords:
+                for tpath in tree:
+                    tpath_lower = tpath.lower()
+                    if ("test" in tpath_lower or "spec" in tpath_lower) and any(kw in tpath_lower for kw in keywords):
+                        if tpath not in related_test_files:
+                            related_test_files.append(tpath)
+
+            if not related_test_files:
+                for tpath in tree:
+                    tpath_lower = tpath.lower()
+                    if "test" in tpath_lower and any(tpath_lower.endswith(ext) for ext in [".py", ".ts", ".js", ".go", ".rs"]):
+                        related_test_files.append(tpath)
+                        if len(related_test_files) >= 3:
+                            break
+
+            for tpath in related_test_files[:3]:
+                if tpath not in fetched_files:
+                    tcontent = GitHubClient.fetch_file_content(token, owner, repo, tpath)
+                    if tcontent:
+                        fetched_files[tpath] = tcontent[:max_comment]
+
+            evidence["primary_files"] = primary_fetched or candidate_files
+            evidence["test_files"] = related_test_files
 
         else: # ISSUE_UNDERSTANDING or GENERAL_QUERY
             target_issue = issue_number or (intent_info.get("issue_numbers", [])[0] if intent_info.get("issue_numbers") else None)
